@@ -106,6 +106,33 @@ export class StatsManager {
 
         this._updateKey(this._history.daily, dayKey, rxBytes, txBytes);
         this._updateKey(this._history.monthly, monthKey, rxBytes, txBytes);
+
+        // Optimization: Periodic pruning of very old data (once per hour roughly)
+        if (now.getMinutes() === 0 && now.getSeconds() < 2) {
+            this._pruneHistory();
+        }
+    }
+
+    /**
+     * Keeps the memory and disk footprint lean by removing data older than 1 year.
+     */
+    private _pruneHistory(): void {
+        const threshold = Date.now() - (365 * 24 * 60 * 60 * 1000);
+        
+        // Prune Daily
+        for (const key in this._history.daily) {
+            if (new Date(key).getTime() < threshold) {
+                delete this._history.daily[key];
+            }
+        }
+        
+        // Prune Monthly (keep last 24 months)
+        const monthThreshold = Date.now() - (24 * 30 * 24 * 60 * 60 * 1000);
+        for (const key in this._history.monthly) {
+            if (new Date(key + "-01").getTime() < monthThreshold) {
+                delete this._history.monthly[key];
+            }
+        }
     }
 
     private _updateKey(dict: Record<string, TrafficData>, key: string, rx: number, tx: number): void {

@@ -14,12 +14,16 @@ declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
         addMenuItem(item: any, position?: number): void;
         removeAll(): void;
     }
-    export class PopupMenuItem extends GObject.Object {
+    export class PopupBaseMenuItem extends GObject.Object {
+        constructor(params?: any);
+        add_child(actor: any): void;
+    }
+    export class PopupMenuItem extends PopupBaseMenuItem {
         constructor(text: string, params?: any);
         label: any;
         add_style_class_name(name: string): void;
     }
-    export class PopupSeparatorMenuItem extends GObject.Object {}
+    export class PopupSeparatorMenuItem extends PopupBaseMenuItem {}
     export class PopupSubMenuMenuItem extends GObject.Object {
         constructor(text: string, wantIcon?: boolean);
         label: any;

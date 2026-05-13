@@ -1,48 +1,129 @@
 /*
  * Internet Speed Meter — Stylesheet
- * Optimized for GNOME 45+ (Libadwaita style)
+ * Modern Standard & Clean Style for GNOME 45+
  */
 
+/* Panel Indicator */
 .speed-meter-box {
     spacing: 6px;
-    padding: 0 4px;
-    margin: 4px 0;
+    padding: 0 10px;
+    margin: 3px 0;
+    transition: background-color 0.25s;
+    border-radius: 8px;
+}
+
+.speed-meter-box:hover {
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
 .speed-meter-label {
-    /* Tabular-nums ensures the panel doesn't jitter when numbers change */
-    font-family: "Ubuntu Sans Mono", "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
+    font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
-    font-size: 10.5pt;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    font-size: 9.5pt;
+    font-weight: 500;
+    color: #eeeeee;
+}
+
+.speed-meter-icon {
+    icon-size: 14px;
+    color: #3584e4;
+    margin-right: 4px;
 }
 
 /* Menu Styling */
-.speed-meter-menu-header {
-    font-weight: 800;
-    font-size: 11pt;
-    padding: 12px 16px 8px 16px;
-    color: #4A86CF;
+.speed-meter-menu-container {
+    padding: 0;
+    min-width: 320px;
 }
 
-/* Graph Item - Premium Card Style */
-.speed-meter-graph-item {
-    background-color: rgba(255, 255, 255, 0.04);
-    border-radius: 12px;
-    margin: 6px 14px 12px 14px;
-    padding: 16px;
+.speed-meter-dashboard {
+    background-color: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: 12px;
+    margin: 4px 6px 6px 6px;
+    padding: 0;
+    overflow: hidden;
 }
 
-.speed-meter-graph {
-    /* DrawingArea */
+.speed-meter-dashboard-header {
+    padding: 10px 16px;
+    spacing: 8px;
 }
 
-/* Menu Item Refinement */
-.popup-menu-item {
-    margin: 2px 0;
-    padding: 6px 16px;
+.speed-meter-network-info-grid {
+    spacing: 4px;
+}
+
+.speed-meter-info-item {
+    spacing: 4px;
+}
+
+.speed-meter-info-label {
+    font-size: 7.5pt;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.speed-meter-info-value {
+    font-size: 8.5pt;
+    font-weight: 500;
+    color: #ffffff;
+}
+
+/* Premium Card Style for Stats */
+.speed-meter-card {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 10px;
+    margin: 2px 6px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.speed-meter-stat-label {
+    font-weight: 600;
+    font-size: 9pt;
+    color: #ffffff;
+    margin-bottom: 0px;
+}
+
+.speed-meter-stat-value {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #3584e4;
+}
+
+.speed-meter-stat-sub {
+    font-size: 8pt;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Graph Section */
+.speed-meter-graph-container {
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 6px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Buttons and Items */
+.speed-meter-button {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 4px 12px;
+    margin: 4px 6px;
+    transition: all 0.2s;
+}
+
+.speed-meter-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: #3584e4;
+}
+
+.speed-meter-button-label {
+    font-weight: 600;
+    font-size: 9.5pt;
+    color: #ffffff;
 }

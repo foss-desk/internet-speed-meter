@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2025 Mojahid <mojahid@lunecode.com>
 
+import Cairo from 'gi://cairo';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 import { StatsManager, TrafficData } from './stats.js';
@@ -23,7 +24,7 @@ class ActivityGraphImpl extends St.DrawingArea {
             y_expand: true,
         });
 
-        this.set_size(300, 110);
+        this.set_size(300, 80);
         this.connect('repaint', (area: any) => this._draw(area));
     }
 
@@ -32,7 +33,7 @@ class ActivityGraphImpl extends St.DrawingArea {
     }
 
     vfunc_get_preferred_height(_forWidth: number): [number, number] {
-        return [110, 110];
+        return [80, 80];
     }
 
     /**
@@ -78,52 +79,64 @@ class ActivityGraphImpl extends St.DrawingArea {
         if (w <= 0 || h <= 0 || this._dailyData.length === 0) return;
 
         const numDays = this._dailyData.length;
-        const barSpacing = 2;
-        const barWidth = (w / numDays) - barSpacing;
+        const barSpacing = 4;
+        const barWidth = Math.max(2, (w / numDays) - barSpacing);
         const maxBarHeight = h - 25;
+        const bottomY = h - 12;
 
-        // Optimized drawing loop
-        cr.setLineWidth(1);
+        // Draw Background Grid
+        cr.setSourceRGBA(1, 1, 1, 0.08);
+        cr.setLineWidth(0.8);
+        for (let i = 1; i <= 4; i++) {
+            const y = (maxBarHeight / 4) * i;
+            cr.moveTo(0, y);
+            cr.lineTo(w, y);
+            cr.stroke();
+        }
+
+        // Draw Bars
         for (let i = 0; i < numDays; i++) {
             const val = this._dailyData[i];
-            const barH = (val / this._peakValue) * maxBarHeight;
+            const barH = Math.max(1, (val / this._peakValue) * maxBarHeight);
             const x = i * (barWidth + barSpacing);
-            const y = maxBarHeight - barH;
+            const y = bottomY - barH;
 
             const isToday = (i + 1) === this._lastUpdateDay;
+            
             if (isToday) {
-                cr.setSourceRGBA(0.29, 0.52, 0.9, 0.85);
+                // Vibrant Gradient for today
+                const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
+                grad.addColorStopRGBA(0, 0.21, 0.52, 0.89, 1);
+                grad.addColorStopRGBA(1, 0.21, 0.52, 0.89, 0.4);
+                cr.setSource(grad);
             } else {
-                cr.setSourceRGBA(1, 1, 1, 0.15);
+                cr.setSourceRGBA(1, 1, 1, 0.2);
             }
 
-            // High-performance bar drawing
             cr.rectangle(x, y, barWidth, barH);
             cr.fill();
         }
 
-        // Static Text rendering
-        this._drawLabel(cr, `Monthly Peak: ${this._fmt(this._peakValue)}`);
+        // Labels
+        this._drawLabel(cr, `Peak: ${this._fmt(this._peakValue)}`, 5, 15);
         this._drawDayLabels(cr, w, h, numDays);
     }
 
-    private _drawLabel(cr: any, text: string): void {
-        cr.setSourceRGBA(1, 1, 1, 0.6);
-        cr.selectFontFace("Sans", 0, 0);
-        cr.setFontSize(10);
-        cr.moveTo(5, 12);
+    private _drawLabel(cr: any, text: string, x: number, y: number): void {
+        cr.setSourceRGBA(1, 1, 1, 0.7);
+        cr.selectFontFace("Inter", 0, 0);
+        cr.setFontSize(11);
+        cr.moveTo(x, y);
         cr.showText(text);
     }
 
     private _drawDayLabels(cr: any, w: number, h: number, numDays: number): void {
         cr.setSourceRGBA(1, 1, 1, 0.4);
-        cr.setFontSize(9);
-        cr.moveTo(0, h - 5);
-        cr.showText("1");
-        cr.moveTo((w / 2) - 5, h - 5);
-        cr.showText("15");
-        cr.moveTo(w - 15, h - 5);
-        cr.showText(String(numDays));
+        cr.setFontSize(10);
+        cr.moveTo(0, h - 2);
+        cr.showText("Day 1");
+        cr.moveTo(w - 45, h - 2);
+        cr.showText(`Day ${numDays}`);
     }
 
     private _fmt(bytes: number): string {

@@ -42,6 +42,11 @@ export default class SpeedMeterExtension extends Extension {
     private _settings: Gio.Settings | null = null;
     private _statsManager: StatsManager | null = null;
     private _activityGraph: ActivityGraph | null = null;
+    private _ifaceValue: St.Label | null = null;
+    private _vpnValue: St.Label | null = null;
+    private _ipValue: St.Label | null = null;
+    private _publicIpValue: St.Label | null = null;
+    private _lastNetworkUpdate: number = 0;
 
     private _sessionRx: number = 0;
     private _sessionTx: number = 0;
@@ -50,12 +55,13 @@ export default class SpeedMeterExtension extends Extension {
     private _showUpload: boolean = true;
     private _showDownload: boolean = true;
     private _settingsChangedId: number = 0;
+    private _menuOpenStateId: number = 0;
     private _lastLabelText: string = '';
 
-    private _menuToday: PopupMenu.PopupMenuItem | null = null;
-    private _menuThisMonth: PopupMenu.PopupMenuItem | null = null;
-    private _menuLastMonth: PopupMenu.PopupMenuItem | null = null;
-    private _menuSession: PopupMenu.PopupMenuItem | null = null;
+    private _menuToday: PopupMenu.PopupBaseMenuItem | null = null;
+    private _menuThisMonth: PopupMenu.PopupBaseMenuItem | null = null;
+    private _menuLastMonth: PopupMenu.PopupBaseMenuItem | null = null;
+    private _menuSession: PopupMenu.PopupBaseMenuItem | null = null;
 
     enable(): void {
         this._prevRx = 0;
@@ -109,52 +115,134 @@ export default class SpeedMeterExtension extends Extension {
     private _buildMenu(): void {
         if (!this._indicator) return;
 
-        const header = new PopupMenu.PopupMenuItem('\uD83C\uDF10 Monthly Usage History', { reactive: false });
-        header.add_style_class_name('speed-meter-menu-header');
-        (this._indicator.menu as any).addMenuItem(header);
-        (this._indicator.menu as any).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-        this._activityGraph = new ActivityGraph();
-        const graphItem = new PopupMenu.PopupBaseMenuItem({ 
-            reactive: false,
-            can_focus: false,
-            style_class: 'speed-meter-graph-item'
+        // --- DASHBOARD SECTION (Grid + Graph) ---
+        const dashboardBox = new St.BoxLayout({
+            vertical: true,
+            style_class: 'speed-meter-dashboard'
         });
-        graphItem.add_child(this._activityGraph);
-        (this._indicator.menu as any).addMenuItem(graphItem);
 
-        (this._indicator.menu as any).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        const headerBox = new St.BoxLayout({ 
+            vertical: true, 
+            style_class: 'speed-meter-dashboard-header' 
+        });
+        
+        // Grid for Network Info
+        const infoGrid = new St.BoxLayout({ vertical: true, style_class: 'speed-meter-network-info-grid' });
+        
+        const ifaceRow = this._createInfoRow('Connection');
+        const vpnRow = this._createInfoRow('VPN Status');
+        const ipRow = this._createInfoRow('Local IPv4');
+        const publicIpRow = this._createInfoRow('Public IPv4');
 
-        this._menuToday = new PopupMenu.PopupMenuItem('', { reactive: false });
+        this._ifaceValue = ifaceRow.value;
+        this._vpnValue = vpnRow.value;
+        this._ipValue = ipRow.value;
+        this._publicIpValue = publicIpRow.value;
+
+        infoGrid.add_child(ifaceRow.container);
+        infoGrid.add_child(vpnRow.container);
+        infoGrid.add_child(ipRow.container);
+        infoGrid.add_child(publicIpRow.container);
+
+        headerBox.add_child(infoGrid);
+        dashboardBox.add_child(headerBox);
+
+        // Integrated Graph
+        const graphWrapper = new St.BoxLayout({
+            style_class: 'speed-meter-graph-container'
+        });
+        this._activityGraph = new ActivityGraph();
+        graphWrapper.add_child(this._activityGraph);
+        dashboardBox.add_child(graphWrapper);
+
+        const dashboardItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        dashboardItem.add_child(dashboardBox);
+        (this._indicator.menu as any).addMenuItem(dashboardItem);
+
+        // --- STATS SECTION ---
+        this._menuToday = this._createStatItem('Today');
+        this._menuThisMonth = this._createStatItem('This Month');
+        this._menuLastMonth = this._createStatItem('Last Month');
+        this._menuSession = this._createStatItem('Session');
+
         (this._indicator.menu as any).addMenuItem(this._menuToday);
-
-        this._menuThisMonth = new PopupMenu.PopupMenuItem('', { reactive: false });
         (this._indicator.menu as any).addMenuItem(this._menuThisMonth);
-
-        this._menuLastMonth = new PopupMenu.PopupMenuItem('', { reactive: false });
         (this._indicator.menu as any).addMenuItem(this._menuLastMonth);
-
         (this._indicator.menu as any).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-        this._menuSession = new PopupMenu.PopupMenuItem('', { reactive: false });
         (this._indicator.menu as any).addMenuItem(this._menuSession);
 
-        const resetItem = new PopupMenu.PopupMenuItem('   \u21BA Reset Session');
-        (resetItem as any).connect('activate', () => {
+        // Action Buttons Row
+        const actionsBox = new St.BoxLayout({
+            style_class: 'speed-meter-stat-row',
+            x_expand: true,
+        });
+
+        const resetBtn = new St.Button({
+            style_class: 'speed-meter-button',
+            child: new St.Label({ text: '\u21BA Reset', style_class: 'speed-meter-button-label' }),
+            x_expand: true
+        });
+        resetBtn.connect('clicked', () => {
             this._sessionRx = 0;
             this._sessionTx = 0;
             this._updateMenu();
         });
-        (this._indicator.menu as any).addMenuItem(resetItem);
 
-        (this._indicator.menu as any).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        const settingsItem = new PopupMenu.PopupMenuItem('\u2699 Settings');
-        (settingsItem as any).connect('activate', () => {
+        const settingsBtn = new St.Button({
+            style_class: 'speed-meter-button',
+            child: new St.Label({ text: '\u2699 Settings', style_class: 'speed-meter-button-label' }),
+            x_expand: true
+        });
+        settingsBtn.connect('clicked', () => {
             (this as any).openPreferences();
         });
-        (this._indicator.menu as any).addMenuItem(settingsItem);
+
+        actionsBox.add_child(resetBtn);
+        actionsBox.add_child(settingsBtn);
+
+        const actionsItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        actionsItem.add_child(actionsBox);
+        (this._indicator.menu as any).addMenuItem(actionsItem);
+
+        // Update network info only when menu opens
+        this._menuOpenStateId = (this._indicator.menu as any).connect('open-state-changed', (_menu: any, open: boolean) => {
+            if (open) this._updateNetworkInfo();
+        });
 
         this._updateMenu();
+    }
+
+    private _createInfoRow(labelText: string): { container: St.BoxLayout, value: St.Label } {
+        const container = new St.BoxLayout({ style_class: 'speed-meter-info-item', vertical: false, x_expand: true });
+        const label = new St.Label({ text: labelText, style_class: 'speed-meter-info-label', x_expand: true });
+        const value = new St.Label({ text: '...', style_class: 'speed-meter-info-value' });
+        
+        container.add_child(label);
+        container.add_child(value);
+        
+        return { container, value };
+    }
+
+    private _createStatItem(label: string): PopupMenu.PopupBaseMenuItem {
+        const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-card' });
+        const mainBox = new St.BoxLayout({ vertical: true, x_expand: true });
+        
+        const textBox = new St.BoxLayout({ vertical: true, x_expand: true });
+        const titleLabel = new St.Label({ text: label, style_class: 'speed-meter-stat-label' });
+        const valueLabel = new St.Label({ text: '0 B', style_class: 'speed-meter-stat-value' });
+        const subLabel = new St.Label({ text: '(↓ 0 B  ↑ 0 B)', style_class: 'speed-meter-stat-sub' });
+
+        textBox.add_child(titleLabel);
+        textBox.add_child(valueLabel);
+        textBox.add_child(subLabel);
+        
+        mainBox.add_child(textBox);
+        
+        item.add_child(mainBox);
+        (item as any)._valueLabel = valueLabel;
+        (item as any)._subLabel = subLabel;
+        
+        return item;
     }
 
     private _updateMenu(): void {
@@ -164,26 +252,102 @@ export default class SpeedMeterExtension extends Extension {
         const thisMonth = this._statsManager.getThisMonth();
         const lastMonth = this._statsManager.getLastMonth();
 
-        this._updateStatItem(this._menuToday, '\uD83D\uDCC5 Today', today.rx, today.tx);
-        this._updateStatItem(this._menuThisMonth, '\uD83D\uDCCA This Month', thisMonth.rx, thisMonth.tx);
-        this._updateStatItem(this._menuLastMonth, '\uD83D\uDCC4 Last Month', lastMonth.rx, lastMonth.tx);
-        this._updateStatItem(this._menuSession, '\uD83D\uDE80 Session', this._sessionRx, this._sessionTx);
+        this._updateStatItem(this._menuToday, today.rx, today.tx);
+        this._updateStatItem(this._menuThisMonth, thisMonth.rx, thisMonth.tx);
+        this._updateStatItem(this._menuLastMonth, lastMonth.rx, lastMonth.tx);
+        this._updateStatItem(this._menuSession, this._sessionRx, this._sessionTx);
         
         if (this._activityGraph) {
             this._activityGraph.updateFromStats(this._statsManager);
         }
     }
 
-    private _updateStatItem(item: PopupMenu.PopupMenuItem | null, label: string, rx: number, tx: number): void {
+    private _updateNetworkInfo(): void {
+        const now = GLib.get_monotonic_time() / 1000000;
+        if (now - this._lastNetworkUpdate < 30) return;
+        this._lastNetworkUpdate = now;
+
+        // --- ASYNC PIPELINE ---
+        
+        // 1. Get Interface & Connection Type (Fastest, usually ok to keep sync for /proc/net/route)
+        try {
+            const [ok, contents] = GLib.file_get_contents('/proc/net/route');
+            if (!ok) return;
+            const lines = UTF8_DECODER.decode(contents).split('\n');
+            let iface = '';
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].trim().split(/\s+/);
+                if (cols[1] === '00000000') { iface = cols[0]; break; }
+            }
+
+            let type = 'Disconnected';
+            if (iface) {
+                if (iface.startsWith('wl')) type = 'WiFi';
+                else if (iface.startsWith('eth') || iface.startsWith('en')) type = 'Ethernet';
+                else if (iface.startsWith('ppp')) type = 'Mobile';
+                else if (iface.startsWith('tun') || iface.startsWith('wg')) type = 'VPN Tunnel';
+                else type = 'Wired';
+            }
+            if (this._ifaceValue) this._ifaceValue.set_text(`${type} (${iface || 'none'})`);
+
+            // 2. Async VPN Status
+            this._spawnAsync('ip addr', (stdout) => {
+                const hasVpn = /tun|tap|ppp|vpn|wg|tailscale|zero/i.test(stdout);
+                if (this._vpnValue) {
+                    this._vpnValue.set_text(hasVpn ? 'Active \u2705' : 'None');
+                    this._vpnValue.set_style(hasVpn ? 'color: #2ec27e; font-weight: bold;' : 'color: rgba(255,255,255,0.4);');
+                }
+            });
+
+            // 3. Async Local IP
+            if (iface) {
+                this._spawnAsync(`ip -4 addr show ${iface}`, (stdout) => {
+                    const match = stdout.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
+                    if (match && this._ipValue) this._ipValue.set_text(match[1]);
+                });
+            }
+
+            // 4. Async Public IP
+            if (this._publicIpValue) this._publicIpValue.set_text('Fetching...');
+            const publicIpCmd = 'bash -c "curl -s --max-time 3 https://api.ipify.org || wget -qO- --timeout=3 https://icanhazip.com || python3 -c \'import urllib.request; print(urllib.request.urlopen(\"https://api.ipify.org\", timeout=3).read().decode())\' 2>/dev/null || echo Failed"';
+            this._spawnAsync(publicIpCmd, (stdout) => {
+                if (stdout && stdout.trim() !== 'Failed' && this._publicIpValue) {
+                    this._publicIpValue.set_text(stdout.trim());
+                } else if (this._publicIpValue) {
+                    this._publicIpValue.set_text('Unavailable');
+                }
+            });
+
+        } catch (e) {}
+    }
+
+    private _spawnAsync(cmd: string, callback: (stdout: string) => void): void {
+        try {
+            const proc = new Gio.Subprocess({
+                argv: ['bash', '-c', cmd],
+                flags: Gio.SubprocessFlags.STDOUT_PIPE,
+            });
+            proc.init(null);
+            proc.communicate_utf8_async(null, null, (p, res) => {
+                try {
+                    const [ok, stdout] = p!.communicate_utf8_finish(res);
+                    if (ok && stdout) callback(stdout);
+                } catch (e) {}
+            });
+        } catch (e) {}
+    }
+
+    private _updateStatItem(item: PopupMenu.PopupBaseMenuItem | null, rx: number, tx: number): void {
         if (!item) return;
         const total = this._fmtSize(rx + tx);
         const down = this._fmtSize(rx);
         const up = this._fmtSize(tx);
         
-        const fullText = `${label}:  ${total}   (↓ ${down}  ↑ ${up})`;
-        if (item.label.get_text() !== fullText) {
-            item.label.set_text(fullText);
-        }
+        const valueLabel = (item as any)._valueLabel as St.Label;
+        const subLabel = (item as any)._subLabel as St.Label;
+
+        if (valueLabel) valueLabel.set_text(total);
+        if (subLabel) subLabel.set_text(`↓ ${down}   ↑ ${up}`);
     }
 
     private _fmtSize(bytes: number): string {
@@ -229,21 +393,23 @@ export default class SpeedMeterExtension extends Extension {
                 const [ok, bytes] = file.load_contents_finish(res);
                 if (!ok || !bytes) return;
 
-                // Optimization: Instead of splitting the entire string, we search for lines efficiently
                 const text = UTF8_DECODER.decode(bytes);
                 let rx = 0;
                 let tx = 0;
 
-                // Fast scan through lines
                 const lines = text.split('\n');
                 for (let i = 2; i < lines.length; i++) {
-                    const line = lines[i].trim();
-                    if (!line || line.startsWith('lo:')) continue; 
+                    const line = lines[i];
+                    const colonIndex = line.indexOf(':');
+                    if (colonIndex === -1) continue;
+                    
+                    const iface = line.substring(0, colonIndex).trim();
+                    if (iface === 'lo') continue;
 
-                    const cols = line.split(/\s+/);
-                    if (cols.length >= 10) {
-                        rx += parseInt(cols[1], 10) || 0;
-                        tx += parseInt(cols[9], 10) || 0;
+                    const data = line.substring(colonIndex + 1).trim().split(/\s+/);
+                    if (data.length >= 9) {
+                        rx += parseInt(data[0], 10) || 0;
+                        tx += parseInt(data[8], 10) || 0;
                     }
                 }
 
@@ -265,7 +431,6 @@ export default class SpeedMeterExtension extends Extension {
                         this._updateMenu();
                     }
 
-                    // Content-Change Guard: Only update label if the value actually changed
                     let labelParts = [];
                     if (this._showDownload) labelParts.push(`${this._fmt(rxs)} \u2193`);
                     if (this._showUpload) labelParts.push(`${this._fmt(txs)} \u2191`);
@@ -280,9 +445,7 @@ export default class SpeedMeterExtension extends Extension {
                 this._prevRx = rx;
                 this._prevTx = tx;
                 this._prevTime = now;
-            } catch (e) {
-                // Silently handle read errors to prevent shell stutter
-            }
+            } catch (e) {}
         });
     }
 
@@ -308,11 +471,15 @@ export default class SpeedMeterExtension extends Extension {
             this._saveTimeoutId = 0;
         }
 
+        if (this._indicator && this._menuOpenStateId) {
+            (this._indicator.menu as any).disconnect(this._menuOpenStateId);
+            this._menuOpenStateId = 0;
+        }
+
         if (this._settings && this._settingsChangedId) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = 0;
         }
-
         this._statsManager?.save();
 
         if (this._indicator) {
@@ -353,6 +520,26 @@ export default class SpeedMeterExtension extends Extension {
         if (this._menuSession) {
             (this._menuSession as any).destroy();
             this._menuSession = null;
+        }
+
+        if (this._ifaceValue) {
+            this._ifaceValue.destroy();
+            this._ifaceValue = null;
+        }
+
+        if (this._vpnValue) {
+            this._vpnValue.destroy();
+            this._vpnValue = null;
+        }
+
+        if (this._ipValue) {
+            this._ipValue.destroy();
+            this._ipValue = null;
+        }
+
+        if (this._publicIpValue) {
+            this._publicIpValue.destroy();
+            this._publicIpValue = null;
         }
 
         this._procFile = null;
