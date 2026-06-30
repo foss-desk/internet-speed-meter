@@ -35,5 +35,11 @@
       <description>Whether to display the download (RX) speed in the panel.</description>
     </key>
 
+    <key name="show-capsule" type="b">
+      <default>false</default>
+      <summary>Always show capsule background</summary>
+      <description>Whether to show the capsule background styling in the panel permanently.</description>
+    </key>
+
   </schema>
 </schemalist>
