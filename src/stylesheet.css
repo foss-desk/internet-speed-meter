@@ -6,7 +6,7 @@
 /* Panel Indicator */
 .speed-meter-box {
     spacing: 6px;
-    padding: 0 10px;
+    padding: 0 12px;
     margin: 3px 0;
     transition: background-color 0.25s;
     border-radius: 8px;
@@ -34,12 +34,12 @@
 
 .speed-meter-download-label {
     text-align: right;
-    min-width: 90px;
+    min-width: 100px;
 }
 
 .speed-meter-upload-label {
     text-align: left;
-    min-width: 90px;
+    min-width: 100px;
 }
 
 .speed-meter-sep-label {
