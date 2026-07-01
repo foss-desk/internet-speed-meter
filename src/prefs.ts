@@ -67,5 +67,13 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         });
         settings.bind('show-upload', uploadRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(uploadRow);
+
+        // Show Capsule
+        const capsuleRow = new Adw.SwitchRow({
+            title: 'Always Show Capsule Background',
+            subtitle: 'Keep the rounded background capsule visible even when not hovered',
+        });
+        settings.bind('show-capsule', capsuleRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        visibilityGroup.add(capsuleRow);
     }
 }

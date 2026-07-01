@@ -37,7 +37,9 @@ export default class SpeedMeterExtension extends Extension {
     private _saveTimeoutId: number = 0;
     private _indicator: PanelMenu.Button | null = null;
     private _box: St.BoxLayout | null = null;
-    private _label: St.Label | null = null;
+    private _downLabel: St.Label | null = null;
+    private _sepLabel: St.Label | null = null;
+    private _upLabel: St.Label | null = null;
     private _procFile: Gio.File | null = null;
     private _settings: Gio.Settings | null = null;
     private _statsManager: StatsManager | null = null;
@@ -54,9 +56,11 @@ export default class SpeedMeterExtension extends Extension {
     private _useBits: boolean = false;
     private _showUpload: boolean = true;
     private _showDownload: boolean = true;
+    private _showCapsule: boolean = false;
     private _settingsChangedId: number = 0;
     private _menuOpenStateId: number = 0;
-    private _lastLabelText: string = '';
+    private _lastDownText: string = '';
+    private _lastUpText: string = '';
 
     private _menuToday: PopupMenu.PopupBaseMenuItem | null = null;
     private _menuThisMonth: PopupMenu.PopupBaseMenuItem | null = null;
@@ -69,7 +73,8 @@ export default class SpeedMeterExtension extends Extension {
         this._sessionRx = 0;
         this._sessionTx = 0;
         this._prevTime = GLib.get_monotonic_time();
-        this._lastLabelText = '';
+        this._lastDownText = '';
+        this._lastUpText = '';
 
         this._statsManager = new StatsManager(this.path);
         this._settings = this.getSettings();
@@ -78,7 +83,13 @@ export default class SpeedMeterExtension extends Extension {
         this._settingsChangedId = this._settings.connect(
             'changed', (_, key) => {
                 this._loadSettings();
-                if (key === 'refresh-interval') this._restartTimer();
+                if (key === 'refresh-interval') {
+                    this._restartTimer();
+                } else if (key === 'show-capsule') {
+                    this._updateCapsuleStyle();
+                } else if (key === 'show-download' || key === 'show-upload') {
+                    this._updateVisibility();
+                }
             },
         );
 
@@ -90,13 +101,31 @@ export default class SpeedMeterExtension extends Extension {
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        this._label = new St.Label({
-            text: '\u2026',
+        this._downLabel = new St.Label({
+            text: '',
             style_class: 'speed-meter-label',
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        this._box.add_child(this._label);
+        this._sepLabel = new St.Label({
+            text: '\u2502', // │
+            style_class: 'speed-meter-label speed-meter-sep-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        this._upLabel = new St.Label({
+            text: '',
+            style_class: 'speed-meter-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        this._box.add_child(this._downLabel);
+        this._box.add_child(this._sepLabel);
+        this._box.add_child(this._upLabel);
+
+        this._updateVisibility();
+        this._updateCapsuleStyle();
+
         this._indicator.add_child(this._box);
 
         this._buildMenu();
@@ -377,7 +406,57 @@ export default class SpeedMeterExtension extends Extension {
         this._useBits = this._settings.get_boolean('use-bits');
         this._showUpload = this._settings.get_boolean('show-upload');
         this._showDownload = this._settings.get_boolean('show-download');
-        this._lastLabelText = ''; 
+        this._showCapsule = this._settings.get_boolean('show-capsule');
+        this._lastDownText = '';
+        this._lastUpText = '';
+    }
+
+    private _updateVisibility(): void {
+        if (!this._downLabel || !this._sepLabel || !this._upLabel) return;
+
+        const showDown = this._showDownload;
+        const showUp = this._showUpload;
+
+        if (!showDown && !showUp) {
+            this._downLabel.visible = true;
+            this._downLabel.set_text('\u2026');
+            this._lastDownText = '\u2026';
+            this._sepLabel.visible = false;
+            this._upLabel.visible = false;
+
+            this._downLabel.remove_style_class_name('speed-meter-download-label');
+            this._downLabel.add_style_class_name('speed-meter-single-label');
+        } else if (showDown && showUp) {
+            this._downLabel.visible = true;
+            this._upLabel.visible = true;
+            this._sepLabel.visible = true;
+
+            this._downLabel.remove_style_class_name('speed-meter-single-label');
+            this._downLabel.add_style_class_name('speed-meter-download-label');
+            this._upLabel.remove_style_class_name('speed-meter-single-label');
+            this._upLabel.add_style_class_name('speed-meter-upload-label');
+        } else {
+            this._downLabel.visible = showDown;
+            this._upLabel.visible = showUp;
+            this._sepLabel.visible = false;
+
+            if (showDown) {
+                this._downLabel.remove_style_class_name('speed-meter-download-label');
+                this._downLabel.add_style_class_name('speed-meter-single-label');
+            } else {
+                this._upLabel.remove_style_class_name('speed-meter-upload-label');
+                this._upLabel.add_style_class_name('speed-meter-single-label');
+            }
+        }
+    }
+
+    private _updateCapsuleStyle(): void {
+        if (!this._box) return;
+        if (this._showCapsule) {
+            this._box.add_style_class_name('capsule-active');
+        } else {
+            this._box.remove_style_class_name('capsule-active');
+        }
     }
 
     /**
@@ -385,7 +464,7 @@ export default class SpeedMeterExtension extends Extension {
      * Uses a lightweight parser to avoid large string allocations.
      */
     private _tick(): void {
-        if (!this._procFile || !this._label) return;
+        if (!this._procFile || !this._downLabel || !this._upLabel) return;
 
         this._procFile.load_contents_async(null, (file, res) => {
             try {
@@ -431,14 +510,27 @@ export default class SpeedMeterExtension extends Extension {
                         this._updateMenu();
                     }
 
-                    let labelParts = [];
-                    if (this._showDownload) labelParts.push(`${this._fmt(rxs)} \u2193`);
-                    if (this._showUpload) labelParts.push(`${this._fmt(txs)} \u2191`);
-                    const finalLabel = labelParts.join(' \u2502 ') || '\u2026';
+                    const downLabel = this._downLabel;
+                    const upLabel = this._upLabel;
+                    if (!downLabel || !upLabel) return;
 
-                    if (this._lastLabelText !== finalLabel) {
-                        this._label?.set_text(finalLabel);
-                        this._lastLabelText = finalLabel;
+                    const downText = this._showDownload ? `${this._fmt(rxs)} \u2193` : '';
+                    const upText = this._showUpload ? `${this._fmt(txs)} \u2191` : '';
+
+                    if (!this._showDownload && !this._showUpload) {
+                        if (this._lastDownText !== '\u2026') {
+                            downLabel.set_text('\u2026');
+                            this._lastDownText = '\u2026';
+                        }
+                    } else {
+                        if (this._showDownload && this._lastDownText !== downText) {
+                            downLabel.set_text(downText);
+                            this._lastDownText = downText;
+                        }
+                        if (this._showUpload && this._lastUpText !== upText) {
+                            upLabel.set_text(upText);
+                            this._lastUpText = upText;
+                        }
                     }
                 }
 
@@ -492,9 +584,19 @@ export default class SpeedMeterExtension extends Extension {
             this._box = null;
         }
 
-        if (this._label) {
-            this._label.destroy();
-            this._label = null;
+        if (this._downLabel) {
+            this._downLabel.destroy();
+            this._downLabel = null;
+        }
+
+        if (this._sepLabel) {
+            this._sepLabel.destroy();
+            this._sepLabel = null;
+        }
+
+        if (this._upLabel) {
+            this._upLabel.destroy();
+            this._upLabel = null;
         }
 
         if (this._activityGraph) {
@@ -545,6 +647,7 @@ export default class SpeedMeterExtension extends Extension {
         this._procFile = null;
         this._settings = null;
         this._statsManager = null;
-        this._lastLabelText = '';
+        this._lastDownText = '';
+        this._lastUpText = '';
     }
 }

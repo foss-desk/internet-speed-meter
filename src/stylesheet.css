@@ -6,7 +6,7 @@
 /* Panel Indicator */
 .speed-meter-box {
     spacing: 6px;
-    padding: 0 10px;
+    padding: 0 12px;
     margin: 3px 0;
     transition: background-color 0.25s;
     border-radius: 8px;
@@ -16,12 +16,40 @@
     background-color: rgba(255, 255, 255, 0.08);
 }
 
+.speed-meter-box.capsule-active {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.speed-meter-box.capsule-active:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
 .speed-meter-label {
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
     font-size: 9.5pt;
     font-weight: 500;
     color: #eeeeee;
+}
+
+.speed-meter-download-label {
+    text-align: right;
+    min-width: 100px;
+}
+
+.speed-meter-upload-label {
+    text-align: left;
+    min-width: 100px;
+}
+
+.speed-meter-sep-label {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.35);
+    margin: 0 4px;
+}
+
+.speed-meter-single-label {
+    text-align: center;
 }
 
 .speed-meter-icon {
