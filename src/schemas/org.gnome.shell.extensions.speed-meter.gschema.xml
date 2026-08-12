@@ -35,10 +35,46 @@
       <description>Whether to display the download (RX) speed in the panel.</description>
     </key>
 
-    <key name="show-capsule" type="b">
+    <key name="monitored-interface" type="s">
+      <default>""</default>
+      <summary>Monitored Network Interface</summary>
+      <description>Specific interface name (e.g. wlan0, eth0, tun0) or empty string to sum all active interfaces.</description>
+    </key>
+
+    <key name="data-quota-gb" type="i">
+      <default>0</default>
+      <summary>Monthly Data Quota in GB</summary>
+      <description>Monthly data usage limit in Gigabytes. Set to 0 to disable data quota warnings.</description>
+    </key>
+
+    <key name="quota-notify" type="b">
+      <default>true</default>
+      <summary>Enable Data Quota Desktop Notifications</summary>
+      <description>Whether to trigger system desktop notifications when reaching 80% and 100% data quota.</description>
+    </key>
+
+    <key name="auto-hide-idle" type="b">
       <default>false</default>
-      <summary>Always show capsule background</summary>
-      <description>Whether to show the capsule background styling in the panel permanently.</description>
+      <summary>Auto-hide panel when network is idle</summary>
+      <description>Whether to hide the indicator from top panel when overall network speed is below threshold.</description>
+    </key>
+
+    <key name="idle-threshold-kb" type="i">
+      <default>5</default>
+      <summary>Idle threshold in KB/s</summary>
+      <description>Speed threshold in KB/s below which the indicator is hidden when auto-hide is enabled.</description>
+    </key>
+
+    <key name="adaptive-power-saver" type="b">
+      <default>true</default>
+      <summary>Adaptive Power and Data Saver</summary>
+      <description>Automatically increases polling interval when on battery power or metered connection to save battery and data.</description>
+    </key>
+
+    <key name="show-top-apps" type="b">
+      <default>true</default>
+      <summary>Show Top Bandwidth Applications</summary>
+      <description>Inspect and display top bandwidth consuming processes in the menu dashboard.</description>
     </key>
 
   </schema>

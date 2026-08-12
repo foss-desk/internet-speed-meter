@@ -26,12 +26,14 @@
 
 ## ✨ Features
 
-- **🚀 Real-Time Monitoring** — Live download (↓) and upload (↑) speeds in the top panel.
-- **📊 Usage Statistics** — Click the speed to view detailed traffic stats for **Today**, **This Month**, and **Last Month** (calendar-based).
-- **⚙️ Native Preferences** — Full configuration window (Libadwaita) to toggle bits/bytes, refresh rate, and visibility.
-- **⚡ Deeply Optimized** — Asynchronous I/O, static object reuse, and UI redraw guards ensure ~0% CPU and minimal memory impact.
-- **🔄 Auto-Aggregation** — Automatically sums traffic across Wi-Fi, Ethernet, VPN, and other active interfaces.
-- **💾 Persistent History** — Automatically tracks and saves your data usage to `~/.cache/internet-speed-meter/stats.json`.
+- **🚀 Real-Time Monitoring** — Live download (↓) and upload (↑) speeds seamlessly integrated in the top panel.
+- **⚡ Integrated Speedtest Suite** — Run Ping, Jitter, Download, and Upload bandwidth checks instantly without opening a browser through a dedicated Ookla-inspired popup panel.
+- **📈 Dual-Mode Graph Analytics** — Interactive menu dashboard featuring both a **Live 60-second Bezier wave graph** and a **Monthly daily history bar chart**.
+- **🔋 Smart Battery & VPN Inspector** — Adaptive polling auto-throttles to save battery, alongside real-time recognition for VPNs/Mesh networks (Tailscale, WireGuard, WARP, ZeroTier).
+- **📊 App-Level Profiling & Quotas** — Tracks background bandwidth consumption by application and allows setting Monthly Data Caps (GB) with desktop notification alerts.
+- **⚙️ Native Preferences** — Full configuration window (Libadwaita) to target interfaces, toggle bits/bytes, tweak visual aesthetics, and export statistical data to CSV logs. 
+- **⚡ Deeply Optimized** — Asynchronous I/O, bounds-checking suspend/resume guards, and pure GNOME `St.Icon` symbolic assets ensure ~0% CPU, no GC churn, and native desktop integration.
+- **💾 Persistent History** — Automatically tracks and securely caches daily/monthly statistics to `~/.cache/internet-speed-meter/stats.json`.
 - **🖥️ GNOME 50+ Ready** — Pure ESM architecture fully compatible with GNOME 45 through 50+.
 
 ## 📦 Requirements

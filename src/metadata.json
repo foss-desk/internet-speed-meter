@@ -10,7 +10,7 @@
     "49",
     "50"
   ],
-  "version": 14,
+  "version": 15,
   "url": "https://github.com/foss-desk/internet-speed-meter",
   "settings-schema": "org.gnome.shell.extensions.speed-meter"
 }
