@@ -5,23 +5,14 @@
 
 /* Panel Indicator */
 .speed-meter-box {
-    spacing: 6px;
-    padding: 0 12px;
-    margin: 3px 0;
+    spacing: 4px;
+    padding: 0 4px;
+    margin: 0;
     transition: background-color 0.25s;
-    border-radius: 8px;
 }
 
 .speed-meter-box:hover {
     background-color: rgba(255, 255, 255, 0.08);
-}
-
-.speed-meter-box.capsule-active {
-    background-color: rgba(255, 255, 255, 0.08);
-}
-
-.speed-meter-box.capsule-active:hover {
-    background-color: rgba(255, 255, 255, 0.15);
 }
 
 .speed-meter-label {
@@ -34,18 +25,18 @@
 
 .speed-meter-download-label {
     text-align: right;
-    min-width: 100px;
+    min-width: 64px;
 }
 
 .speed-meter-upload-label {
     text-align: left;
-    min-width: 100px;
+    min-width: 64px;
 }
 
 .speed-meter-sep-label {
     text-align: center;
     color: rgba(255, 255, 255, 0.35);
-    margin: 0 4px;
+    margin: 0 2px;
 }
 
 .speed-meter-single-label {
@@ -133,6 +124,229 @@
     background-color: rgba(0, 0, 0, 0.2);
     padding: 6px 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.speed-meter-tabs-bar {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 2px;
+    margin-bottom: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.speed-meter-tab-button {
+    background-color: transparent;
+    border-radius: 6px;
+    padding: 3px 8px;
+    transition: all 0.2s ease;
+}
+
+.speed-meter-tab-button:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.speed-meter-tab-button.speed-meter-tab-active {
+    background-color: #3584e4;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.speed-meter-tab-content {
+    spacing: 5px;
+    align-items: center;
+    justify-content: center;
+}
+
+.speed-meter-tab-icon {
+    icon-size: 13px;
+}
+
+.speed-meter-button-content {
+    spacing: 5px;
+    align-items: center;
+    justify-content: center;
+}
+
+.speed-meter-button-icon {
+    icon-size: 14px;
+}
+
+.speed-meter-tab-label {
+    font-size: 8pt;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+/* App Usage History Panel Styling */
+.speed-meter-app-panel {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    margin: 4px 6px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.speed-meter-app-box {
+    padding: 10px 12px;
+    spacing: 8px;
+}
+
+.speed-meter-app-list {
+    spacing: 6px;
+    margin-top: 4px;
+}
+
+/* Ookla-Inspired Speedtest Panel Styling */
+.speed-meter-ookla-panel {
+    background-color: #0d111a;
+    border: 1px solid rgba(0, 210, 255, 0.25);
+    border-radius: 14px;
+    margin: 6px;
+    padding: 0;
+}
+
+.speed-meter-ookla-box {
+    padding: 12px 14px;
+    spacing: 10px;
+}
+
+.speed-meter-ookla-header {
+    margin-bottom: 2px;
+}
+
+.speed-meter-ookla-brand {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #00d2ff;
+    letter-spacing: 1.5px;
+}
+
+.speed-meter-ookla-server {
+    font-size: 7.5pt;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 1px;
+}
+
+.speed-meter-ookla-ping-strip {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.speed-meter-ookla-ping-item {
+    spacing: 2px;
+}
+
+.speed-meter-ookla-ping-lbl {
+    font-size: 7pt;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.8px;
+}
+
+.speed-meter-ookla-ping-val {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+/* Ookla Gauge Cards */
+.speed-meter-ookla-gauges-row {
+    spacing: 8px;
+}
+
+.speed-meter-ookla-gauge-card {
+    border-radius: 10px;
+    padding: 10px 8px;
+    margin: 0;
+    align-items: center;
+}
+
+.speed-meter-down-card {
+    background-color: rgba(0, 210, 255, 0.06);
+    border: 1px solid rgba(0, 210, 255, 0.2);
+}
+
+.speed-meter-up-card {
+    background-color: rgba(224, 86, 253, 0.06);
+    border: 1px solid rgba(224, 86, 253, 0.2);
+}
+
+.speed-meter-ookla-gauge-title {
+    font-size: 7.5pt;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+}
+
+.speed-meter-down-title {
+    color: #00d2ff;
+}
+
+.speed-meter-up-title {
+    color: #e056fd;
+}
+
+.speed-meter-ookla-gauge-value {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 20pt;
+    font-weight: 800;
+    margin: 4px 0;
+}
+
+.speed-meter-down-value {
+    color: #00d2ff;
+}
+
+.speed-meter-up-value {
+    color: #e056fd;
+}
+
+.speed-meter-ookla-gauge-unit {
+    font-size: 8pt;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.speed-meter-ookla-status-box {
+    padding: 2px 0;
+}
+
+.speed-meter-ookla-status-text {
+    font-size: 7.5pt;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 0.5px;
+}
+
+/* Big Ookla GO Button */
+.speed-meter-ookla-go-row {
+    margin-top: 4px;
+}
+
+.speed-meter-ookla-go-button {
+    background-color: transparent;
+    border: 2px solid #00d2ff;
+    border-radius: 20px;
+    padding: 6px 0;
+    transition: all 0.25s ease;
+}
+
+.speed-meter-ookla-go-button:hover {
+    background-color: rgba(0, 210, 255, 0.15);
+    box-shadow: 0 0 12px rgba(0, 210, 255, 0.4);
+}
+
+.speed-meter-ookla-go-label {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #00d2ff;
+    letter-spacing: 2px;
+}
+
+.speed-meter-close-btn {
+    padding: 2px 8px;
+    margin: 0;
 }
 
 /* Buttons and Items */

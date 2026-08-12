@@ -17,6 +17,7 @@ declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
     export class PopupBaseMenuItem extends GObject.Object {
         constructor(params?: any);
         add_child(actor: any): void;
+        destroy(): void;
     }
     export class PopupMenuItem extends PopupBaseMenuItem {
         constructor(text: string, params?: any);

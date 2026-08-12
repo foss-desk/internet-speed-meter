@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-08-12
+
+### Added
+- **Ookla-Inspired Speedtest Suite**: Run instant Ping, Jitter, Download, and Upload bandwidth tests from a dedicated neon-styled dashboard panel.
+- **Segmented Dual-Mode Graph UI**: Toggle seamlessly between a live 60-second real-time Bezier wave graph and the classic daily monthly bar chart.
+- **Monthly App Traffic Profiling**: Inspect application-level data usage from the Preferences window, ranking apps by total bandwidth consumed. 
+- **Smart Battery & Data Polling**: Adaptive power saving mode that automatically lowers UI polling frequency when on battery power.
+- **Smart VPN/Mesh Inspector**: Real-time identification and tailored badges for WireGuard, Tailscale, Cloudflare WARP, ZeroTier, and OpenVPN networks.
+- **Data Caps & Alerts**: Set a Monthly Data Quota (GB) and receive desktop alerts at 80% or 100% bandwidth usage.
+- **CSV Data Exporter**: Quickly export all historic daily/monthly traffic reports to a CSV file via Settings.
+- **Native Interface Binding**: Option to lock monitoring to a specific interface (e.g. `wlan0` or `eth0`).
+
+### Changed
+- **Pure GNOME Native UI Polish**: Completely scrubbed text emojis and replaced them with authentic GNOME 45+ `St.Icon` symbolic elements for an integrated, highly professional look.
+- **Refined Panel Layout**: Tightened top-panel layouts, unified spacing margins, and optimized CSS border styling without capsule-boxing. 
+- Dynamic integration that automatically shields/hides historic statistical cards when the Speedtest panel is triggered.
+
+### Fixed
+- Fixed GNOME SpiderMonkey `journalctl` memory leak warnings caused by redundant recursive child `.destroy()` teardown calls on extension disable/updates.
+- Resolved interface counter reset race conditions leading to corrupted/negative delta recordings in history caching.
+- Prevented artificial multi-gigabit "Spikes" triggered immediately following system sleep/resume phase cycles.
+- Fixed asynchronous IO race conditions inside `StatsManager` loading preventing overwrites across quick boots.
+
 ## [1.4.0] - 2026-05-14
 
 ### Added

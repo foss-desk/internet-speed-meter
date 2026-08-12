@@ -12,6 +12,7 @@ export interface TrafficData {
 export interface StatsHistory {
     daily: Record<string, TrafficData>; // "YYYY-MM-DD"
     monthly: Record<string, TrafficData>; // "YYYY-MM"
+    appUsage?: Record<string, Record<string, number>>; // "YYYY-MM" -> { "Firefox": bytes }
 }
 
 const UTF8_ENCODER = new TextEncoder();
@@ -21,6 +22,8 @@ export class StatsManager {
     private _file: Gio.File;
     private _history: StatsHistory = { daily: {}, monthly: {} };
     private _lastSavedJson: string = '';
+    private _loaded: boolean = false;
+    private _pendingUpdates: TrafficData[] = [];
 
     constructor(cacheDir: string) {
         const path = GLib.build_filenamev([cacheDir, 'stats.json']);
@@ -30,30 +33,56 @@ export class StatsManager {
 
     private async _load(): Promise<void> {
         try {
-            if (!this._file.query_exists(null)) return;
+            if (!this._file.query_exists(null)) {
+                this._loaded = true;
+                return;
+            }
             
             return new Promise((resolve, reject) => {
                 this._file.load_contents_async(null, (file, res) => {
                     try {
                         if (!file) {
+                            this._loaded = true;
                             resolve();
                             return;
                         }
                         const [ok, contents] = file.load_contents_finish(res);
-                        if (ok) {
+                        if (ok && contents) {
                             const text = UTF8_DECODER.decode(contents);
-                            this._history = JSON.parse(text);
-                            this._lastSavedJson = text;
+                            try {
+                                const loaded = JSON.parse(text);
+                                if (loaded && typeof loaded === 'object') {
+                                    this._history = {
+                                        daily: loaded.daily || {},
+                                        monthly: loaded.monthly || {},
+                                        appUsage: loaded.appUsage || {},
+                                    };
+                                    this._lastSavedJson = text;
+                                }
+                            } catch (parseErr) {
+                                logError(parseErr as Error, 'SpeedMeter: Corrupt stats.json');
+                            }
                         }
+                        this._loaded = true;
+                        this._flushPendingUpdates();
                         resolve();
                     } catch (e) {
+                        this._loaded = true;
                         reject(e);
                     }
                 });
             });
         } catch (e) {
+            this._loaded = true;
             logError(e as Error, 'SpeedMeter: Failed to load stats');
         }
+    }
+
+    private _flushPendingUpdates(): void {
+        for (const pending of this._pendingUpdates) {
+            this.update(pending.rx, pending.tx);
+        }
+        this._pendingUpdates = [];
     }
 
     async save(): Promise<void> {
@@ -100,6 +129,11 @@ export class StatsManager {
     update(rxBytes: number, txBytes: number): void {
         if (rxBytes === 0 && txBytes === 0) return;
 
+        if (!this._loaded) {
+            this._pendingUpdates.push({ rx: rxBytes, tx: txBytes });
+            return;
+        }
+
         const now = new Date();
         const dayKey = this._getDayKey(now);
         const monthKey = dayKey.substring(0, 7);
@@ -111,6 +145,50 @@ export class StatsManager {
         if (now.getMinutes() === 0 && now.getSeconds() < 2) {
             this._pruneHistory();
         }
+    }
+
+    /**
+     * Accumulates monthly traffic per application.
+     */
+    updateAppUsage(appName: string, bytes: number): void {
+        if (!appName || bytes <= 0) return;
+        const monthKey = this._getDayKey(new Date()).substring(0, 7);
+        if (!this._history.appUsage) this._history.appUsage = {};
+        if (!this._history.appUsage[monthKey]) this._history.appUsage[monthKey] = {};
+        const current = this._history.appUsage[monthKey][appName] || 0;
+        this._history.appUsage[monthKey][appName] = current + bytes;
+    }
+
+    /**
+     * Returns monthly app bandwidth usage sorted by highest traffic.
+     */
+    getMonthlyAppUsage(): { appName: string; bytes: number }[] {
+        const monthKey = this._getDayKey(new Date()).substring(0, 7);
+        const dict = (this._history.appUsage && this._history.appUsage[monthKey]) || {};
+        const list = Object.entries(dict).map(([appName, bytes]) => ({ appName, bytes }));
+        list.sort((a, b) => b.bytes - a.bytes);
+        return list;
+    }
+
+    /**
+     * Exports daily and monthly historical statistics to CSV format.
+     */
+    exportToCsv(): string {
+        const lines: string[] = ['Date,Type,Download_Bytes,Upload_Bytes,Total_Bytes'];
+        
+        const sortedDailyKeys = Object.keys(this._history.daily).sort();
+        for (const date of sortedDailyKeys) {
+            const data = this._history.daily[date];
+            lines.push(`${date},Daily,${data.rx},${data.tx},${data.rx + data.tx}`);
+        }
+
+        const sortedMonthlyKeys = Object.keys(this._history.monthly).sort();
+        for (const month of sortedMonthlyKeys) {
+            const data = this._history.monthly[month];
+            lines.push(`${month},Monthly,${data.rx},${data.tx},${data.rx + data.tx}`);
+        }
+
+        return lines.join('\n');
     }
 
     /**
