@@ -988,24 +988,40 @@ export default class SpeedMeterExtension extends Extension {
 
         // Parent indicator destruction recursively destroys all child St/PopupMenu actors.
         // Nullify all references cleanly without redundant .destroy() calls.
+
+        this._box?.destroy();
         this._box = null;
+        this._downLabel?.destroy();
         this._downLabel = null;
+        this._sepLabel?.destroy();
         this._sepLabel = null;
+        this._upLabel?.destroy();
         this._upLabel = null;
+        this._activityGraph?.destroy();
         this._activityGraph = null;
         this._menuToday = null;
         this._menuThisMonth = null;
         this._menuLastMonth = null;
         this._menuSession = null;
+        this._ifaceValue?.destroy();
         this._ifaceValue = null;
+        this._vpnValue?.destroy();
         this._vpnValue = null;
+        this._ipValue?.destroy();
         this._ipValue = null;
+        this._publicIpValue?.destroy();
         this._publicIpValue = null;
+        this._speedTestPanelItem?.destroy();
         this._speedTestPanelItem = null;
+        this._speedTestDownVal?.destroy();
         this._speedTestDownVal = null;
+        this._speedTestUpVal?.destroy();
         this._speedTestUpVal = null;
+        this._speedTestPingVal?.destroy();
         this._speedTestPingVal = null;
+        this._speedTestQualityVal?.destroy();
         this._speedTestQualityVal = null;
+        this._speedTestRunBtnLabel?.destroy();
         this._speedTestRunBtnLabel = null;
 
         this._procFile = null;

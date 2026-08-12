@@ -52,6 +52,12 @@ install: build
 # ─── Package ─────────────────────────────────────────────────────────────────
 
 pack: build
+	@echo "▸ Running Shexli checker..."
+	@if command -v shexli >/dev/null 2>&1; then \
+		shexli $(DIST_DIR)/*.js; \
+	else \
+		echo "⚠️ Shexli not found, skipping checker."; \
+	fi
 	@echo "▸ Creating distribution archive…"
 	@rm -f $(UUID).zip
 	@cd $(DIST_DIR) && zip -r ../$(UUID).zip . -x "*.map" "schemas/gschemas.compiled"
