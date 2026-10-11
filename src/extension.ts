@@ -5,6 +5,7 @@ import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Shell from 'gi://Shell';
+import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -68,6 +69,8 @@ export default class SpeedMeterExtension extends Extension {
     private _speedTestRunBtnLabel: St.Label | null = null;
     private _isTestingSpeed: boolean = false;
     private _lastNetworkUpdate: number = 0;
+    private _soupSession: Soup.Session | null = null;
+    private _soupCancellable: Gio.Cancellable | null = null;
 
     private _sessionRx: number = 0;
     private _sessionTx: number = 0;
@@ -107,6 +110,7 @@ export default class SpeedMeterExtension extends Extension {
         this._isOnBattery = false;
         this._lastDownText = '';
         this._lastUpText = '';
+        this._soupCancellable = new Gio.Cancellable();
 
         this._statsManager = new StatsManager(this.path);
         this._settings = this.getSettings();
@@ -592,19 +596,85 @@ export default class SpeedMeterExtension extends Extension {
             });
         }
 
-        // 4. Async Public IP
-        if (this._publicIpValue) this._publicIpValue.set_text('Fetching...');
-        const publicIpCmd = 'curl -s --max-time 3 https://api.ipify.org || wget -qO- --timeout=3 https://icanhazip.com || echo Unavailable';
-        this._spawnAsync(publicIpCmd, (stdout) => {
-            if (stdout && stdout.trim() !== 'Unavailable' && this._publicIpValue) {
-                this._publicIpValue.set_text(stdout.trim());
-            } else if (this._publicIpValue) {
-                this._publicIpValue.set_text('Unavailable');
-            }
-        });
+        // 4. Async Public IP (Soup 3)
+        this._fetchPublicIp();
 
         // 5. Update Active Application tracking
         this._updateActiveApp();
+    }
+
+    private _getSoupSession(): Soup.Session {
+        if (!this._soupSession) {
+            this._soupSession = new Soup.Session();
+            this._soupSession.timeout = 10;
+        }
+        return this._soupSession;
+    }
+
+    private _fetchPublicIp(): void {
+        if (!this._publicIpValue) return;
+        this._publicIpValue.set_text('Fetching...');
+
+        const session = this._getSoupSession();
+        const message = Soup.Message.new('GET', 'https://api.ipify.org');
+        if (!message) {
+            this._fetchPublicIpFallback();
+            return;
+        }
+
+        session.send_and_read_async(
+            message,
+            GLib.PRIORITY_DEFAULT,
+            this._soupCancellable as any,
+            (sess, res) => {
+                try {
+                    const bytes = sess?.send_and_read_finish(res);
+                    const data = bytes ? bytes.get_data() : null;
+                    if (message.get_status() === Soup.Status.OK && data) {
+                        const ip = UTF8_DECODER.decode(data).trim();
+                        if (ip && this._publicIpValue) {
+                            this._publicIpValue.set_text(ip);
+                            return;
+                        }
+                    }
+                } catch (e) {}
+
+                this._fetchPublicIpFallback();
+            }
+        );
+    }
+
+    private _fetchPublicIpFallback(): void {
+        if (!this._publicIpValue) return;
+        const session = this._getSoupSession();
+        const message = Soup.Message.new('GET', 'https://icanhazip.com');
+        if (!message) {
+            if (this._publicIpValue) this._publicIpValue.set_text('Unavailable');
+            return;
+        }
+
+        session.send_and_read_async(
+            message,
+            GLib.PRIORITY_DEFAULT,
+            this._soupCancellable as any,
+            (sess, res) => {
+                try {
+                    const bytes = sess?.send_and_read_finish(res);
+                    const data = bytes ? bytes.get_data() : null;
+                    if (message.get_status() === Soup.Status.OK && data) {
+                        const ip = UTF8_DECODER.decode(data).trim();
+                        if (ip && this._publicIpValue) {
+                            this._publicIpValue.set_text(ip);
+                            return;
+                        }
+                    }
+                } catch (e) {}
+
+                if (this._publicIpValue) {
+                    this._publicIpValue.set_text('Unavailable');
+                }
+            }
+        );
     }
 
     private _updateActiveApp(): void {
@@ -761,66 +831,93 @@ export default class SpeedMeterExtension extends Extension {
             if (this._speedTestPingVal) this._speedTestPingVal.set_text(avgPing);
             if (this._speedTestJitterVal) this._speedTestJitterVal.set_text(mdevPing);
 
-            // Step 2: Download Speed Test
+            // Step 2: Download Speed Test (Soup 3)
             if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING DOWNLOAD SPEED...');
 
-            const downCmd = `
-                START=$(date +%s%N);
-                BYTES=$(curl -s -w "%{size_download}" -o /dev/null --max-time 6 "https://speed.cloudflare.com/__down?bytes=25000000" || echo 0);
-                END=$(date +%s%N);
-                MS=$(( (END - START) / 1000000 ));
-                if [ "$MS" -gt 0 ] && [ "$BYTES" -gt 0 ]; then
-                    python3 -c "print(round(($BYTES * 8 / 1000000) / ($MS / 1000), 1))" 2>/dev/null || echo "0.0";
-                else
-                    echo "0.0";
-                fi
-            `;
+            const session = this._getSoupSession();
+            const downMsg = Soup.Message.new('GET', 'https://speed.cloudflare.com/__down?bytes=15000000');
+            const downStart = GLib.get_monotonic_time();
 
-            this._spawnAsync(downCmd, (downOut) => {
-                const downMbps = downOut.trim() || '0.0';
-                if (this._speedTestDownVal) {
-                    this._speedTestDownVal.set_text(downMbps === '0.0' ? '--' : downMbps);
+            if (!downMsg) {
+                this._finishSpeedTest('0.0', '0.0', avgPing);
+                return;
+            }
+
+            session.send_and_read_async(
+                downMsg,
+                GLib.PRIORITY_DEFAULT,
+                this._soupCancellable as any,
+                (downSess, downRes) => {
+                    let downMbps = '0.0';
+                    try {
+                        const bytes = downSess?.send_and_read_finish(downRes);
+                        const downElapsedSec = (GLib.get_monotonic_time() - downStart) / 1000000;
+                        if (bytes && downElapsedSec > 0) {
+                            const totalBytes = bytes.get_size();
+                            downMbps = ((totalBytes * 8) / 1000000 / downElapsedSec).toFixed(1);
+                        }
+                    } catch (e) {}
+
+                    if (this._speedTestDownVal) {
+                        this._speedTestDownVal.set_text(downMbps === '0.0' ? '--' : downMbps);
+                    }
+
+                    // Step 3: Upload Speed Test (Soup 3)
+                    if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING UPLOAD SPEED...');
+
+                    const upMsg = Soup.Message.new('POST', 'https://speed.cloudflare.com/__up');
+                    if (!upMsg) {
+                        this._finishSpeedTest(downMbps, '0.0', avgPing);
+                        return;
+                    }
+
+                    const payloadSize = 2500000; // 2.5 MB payload
+                    const payload = new Uint8Array(payloadSize);
+                    upMsg.set_request_body_from_bytes('application/octet-stream', new GLib.Bytes(payload));
+
+                    const upStart = GLib.get_monotonic_time();
+                    session.send_and_read_async(
+                        upMsg,
+                        GLib.PRIORITY_DEFAULT,
+                        this._soupCancellable as any,
+                        (upSess, upRes) => {
+                            let upMbps = '0.0';
+                            try {
+                                upSess?.send_and_read_finish(upRes);
+                                const upElapsedSec = (GLib.get_monotonic_time() - upStart) / 1000000;
+                                if (upElapsedSec > 0 && upMsg.get_status() === Soup.Status.OK) {
+                                    upMbps = ((payloadSize * 8) / 1000000 / upElapsedSec).toFixed(1);
+                                }
+                            } catch (e) {}
+
+                            if (this._speedTestUpVal) {
+                                this._speedTestUpVal.set_text(upMbps === '0.0' ? '--' : upMbps);
+                            }
+
+                            this._finishSpeedTest(downMbps, upMbps, avgPing);
+                        }
+                    );
                 }
-
-                // Step 3: Upload Speed Test (Uses zero stream instead of private local hardware info)
-                if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING UPLOAD SPEED...');
-
-                const upCmd = `
-                    START=$(date +%s%N);
-                    BYTES=$(head -c 5000000 /dev/zero | curl -s -w "%{size_upload}" -o /dev/null --max-time 5 -X POST --data-binary @- "https://speed.cloudflare.com/__up" || echo 0);
-                    END=$(date +%s%N);
-                    MS=$(( (END - START) / 1000000 ));
-                    if [ "$MS" -gt 0 ] && [ "$BYTES" -gt 0 ]; then
-                        python3 -c "print(round(($BYTES * 8 / 1000000) / ($MS / 1000), 1))" 2>/dev/null || echo "0.0";
-                    else
-                        echo "0.0";
-                    fi
-                `;
-
-                this._spawnAsync(upCmd, (upOut) => {
-                    this._isTestingSpeed = false;
-                    if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('AGAIN');
-
-                    const upMbps = upOut.trim() || '0.0';
-                    if (this._speedTestUpVal) {
-                        this._speedTestUpVal.set_text(upMbps === '0.0' ? '--' : upMbps);
-                    }
-
-                    // Calculate Rating
-                    const dVal = parseFloat(downMbps) || 0;
-                    let rating = 'TEST COMPLETE — OPTIMAL FOR 4K STREAMING';
-                    if (dVal <= 0) rating = 'TEST FAILED — CHECK CONNECTION';
-                    else if (dVal < 15) rating = 'TEST COMPLETE — BASIC BROADBAND';
-                    else if (dVal < 40) rating = 'TEST COMPLETE — FAST HIGH-SPEED';
-
-                    if (this._speedTestQualityVal) {
-                        this._speedTestQualityVal.set_text(rating);
-                    }
-
-                    this._notify('Speedtest Complete', `Results:\nDownload: ${downMbps} Mbps | Upload: ${upMbps} Mbps | Ping: ${avgPing}`);
-                });
-            });
+            );
         });
+    }
+
+    private _finishSpeedTest(downMbps: string, upMbps: string, avgPing: string): void {
+        this._isTestingSpeed = false;
+        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('AGAIN');
+
+        // Calculate Rating
+        const dVal = parseFloat(downMbps) || 0;
+        let rating = 'TEST COMPLETE — OPTIMAL FOR 4K STREAMING';
+        if (dVal <= 0) rating = 'TEST FAILED — CHECK CONNECTION';
+        else if (dVal < 15) rating = 'TEST COMPLETE — BASIC BROADBAND';
+        else if (dVal < 40) rating = 'TEST COMPLETE — FAST HIGH-SPEED';
+
+        if (this._speedTestQualityVal) {
+            this._speedTestQualityVal.set_text(rating);
+        }
+
+        this._notify('Speedtest Complete', `Results:\nDownload: ${downMbps} Mbps | Upload: ${upMbps} Mbps | Ping: ${avgPing}`);
     }
 
     private _spawnAsync(cmd: string, callback: (stdout: string) => void): void {
@@ -1146,6 +1243,16 @@ export default class SpeedMeterExtension extends Extension {
         if (this._settings && this._settingsChangedId) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = 0;
+        }
+
+        if (this._soupCancellable) {
+            this._soupCancellable.cancel();
+            this._soupCancellable = null;
+        }
+
+        if (this._soupSession) {
+            this._soupSession.abort();
+            this._soupSession = null;
         }
         this._statsManager?.saveSync();
 
