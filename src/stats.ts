@@ -29,39 +29,40 @@ export class StatsManager {
     constructor(cacheDir: string) {
         const path = GLib.build_filenamev([cacheDir, 'stats.json']);
         this._file = Gio.File.new_for_path(path);
-        this._loadSync();
+        this._loadAsync();
     }
 
-    private _loadSync(): void {
-        try {
-            if (!this._file.query_exists(null)) {
-                this._loaded = true;
-                return;
-            }
-
-            const [ok, contents] = this._file.load_contents(null);
-            if (ok && contents) {
-                const text = UTF8_DECODER.decode(contents);
-                try {
-                    const loaded = JSON.parse(text);
-                    if (loaded && typeof loaded === 'object') {
-                        this._history = {
-                            daily: loaded.daily || {},
-                            monthly: loaded.monthly || {},
-                            appUsage: loaded.appUsage || {},
-                        };
-                        this._lastSavedJson = text;
+    private _loadAsync(): void {
+        this._file.load_contents_async(null, (file, res) => {
+            try {
+                if (!file) return;
+                const [ok, contents] = file.load_contents_finish(res);
+                if (ok && contents) {
+                    const text = UTF8_DECODER.decode(contents);
+                    try {
+                        const loaded = JSON.parse(text);
+                        if (loaded && typeof loaded === 'object') {
+                            this._history = {
+                                daily: loaded.daily || {},
+                                monthly: loaded.monthly || {},
+                                appUsage: loaded.appUsage || {},
+                            };
+                            this._lastSavedJson = text;
+                        }
+                    } catch (parseErr) {
+                        logError(parseErr as Error, 'SpeedMeter: Corrupt stats.json');
                     }
-                } catch (parseErr) {
-                    logError(parseErr as Error, 'SpeedMeter: Corrupt stats.json');
                 }
+            } catch (e) {
+                const glibError = e as any;
+                if (!glibError.matches || !glibError.matches(Gio.io_error_quark(), Gio.IOErrorEnum.NOT_FOUND)) {
+                    logError(e as Error, 'SpeedMeter: Failed to load stats');
+                }
+            } finally {
+                this._loaded = true;
+                this._flushPendingUpdates();
             }
-        } catch (e) {
-            logError(e as Error, 'SpeedMeter: Failed to load stats');
-        } finally {
-            this._loaded = true;
-            this._flushPendingUpdates();
-        }
+        });
     }
 
     private _flushPendingUpdates(): void {

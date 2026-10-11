@@ -1149,35 +1149,69 @@ export default class SpeedMeterExtension extends Extension {
         }
         this._statsManager?.saveSync();
 
+        this._activityGraph?.destroy();
+        this._activityGraph = null;
+
+        this._speedTestPanelItem?.destroy();
+        this._speedTestPanelItem = null;
+
+        this._statsSectionItem?.destroy();
+        this._statsSectionItem = null;
+
+        this._activeAppLabel?.destroy();
+        this._activeAppLabel = null;
+
+        this._ifaceValue?.destroy();
+        this._ifaceValue = null;
+
+        this._vpnValue?.destroy();
+        this._vpnValue = null;
+
+        this._ipValue?.destroy();
+        this._ipValue = null;
+
+        this._publicIpValue?.destroy();
+        this._publicIpValue = null;
+
+        this._speedTestDownVal?.destroy();
+        this._speedTestDownVal = null;
+
+        this._speedTestUpVal?.destroy();
+        this._speedTestUpVal = null;
+
+        this._speedTestPingVal?.destroy();
+        this._speedTestPingVal = null;
+
+        this._speedTestQualityVal?.destroy();
+        this._speedTestQualityVal = null;
+
+        this._speedTestRunBtnLabel?.destroy();
+        this._speedTestRunBtnLabel = null;
+
+        this._speedTestJitterVal?.destroy();
+        this._speedTestJitterVal = null;
+
+        this._downLabel?.destroy();
+        this._downLabel = null;
+
+        this._sepLabel?.destroy();
+        this._sepLabel = null;
+
+        this._upLabel?.destroy();
+        this._upLabel = null;
+
+        this._box?.destroy();
+        this._box = null;
+
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
         }
 
-        // Parent indicator destruction recursively destroys all child St/PopupMenu actors.
-        // Nullify all references cleanly without redundant .destroy() calls on disposed actors.
-        this._box = null;
-        this._downLabel = null;
-        this._sepLabel = null;
-        this._upLabel = null;
-        this._activityGraph = null;
-        this._statsSectionItem = null;
         this._statToday = null;
         this._statThisMonth = null;
         this._statLastMonth = null;
         this._statSession = null;
-        this._ifaceValue = null;
-        this._vpnValue = null;
-        this._ipValue = null;
-        this._publicIpValue = null;
-        this._speedTestPanelItem = null;
-        this._speedTestDownVal = null;
-        this._speedTestUpVal = null;
-        this._speedTestPingVal = null;
-        this._speedTestQualityVal = null;
-        this._speedTestRunBtnLabel = null;
-        this._speedTestJitterVal = null;
-        this._activeAppLabel = null;
 
         this._procFile = null;
         this._settings = null;

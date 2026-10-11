@@ -18,6 +18,9 @@ SRC_DIR    := src
 DIST_DIR   := dist
 SCHEMA_DIR := $(DIST_DIR)/schemas
 
+# Toolchain (overridable via environment or command-line arguments)
+SHEXLI     ?= $(shell command -v shexli 2>/dev/null || (test -x $(HOME)/.local/bin/shexli && echo $(HOME)/.local/bin/shexli))
+
 .PHONY: all build install pack test uninstall clean
 
 # ─── Default ──────────────────────────────────────────────────────────────────
@@ -52,16 +55,14 @@ install: build
 # ─── Package ─────────────────────────────────────────────────────────────────
 
 pack: build
-	@echo "▸ Running Shexli checker..."
-	@if command -v shexli >/dev/null 2>&1; then \
-		shexli $(DIST_DIR)/*.js; \
-	else \
-		echo "⚠️ Shexli not found, skipping checker."; \
-	fi
 	@echo "▸ Creating distribution archive…"
 	@rm -f $(UUID).zip
 	@cd $(DIST_DIR) && zip -r ../$(UUID).zip . -x "*.map" "schemas/gschemas.compiled"
 	@echo "✔ Package created → $(UUID).zip"
+	@if [ -n "$(SHEXLI)" ]; then \
+		echo "▸ Running Shexli static analysis…"; \
+		$(SHEXLI) $(UUID).zip; \
+	fi
 
 # ─── Test (Nested Shell) ─────────────────────────────────────────────────────
 
