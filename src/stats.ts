@@ -24,57 +24,43 @@ export class StatsManager {
     private _lastSavedJson: string = '';
     private _loaded: boolean = false;
     private _pendingUpdates: TrafficData[] = [];
+    private _saving: boolean = false;
 
     constructor(cacheDir: string) {
         const path = GLib.build_filenamev([cacheDir, 'stats.json']);
         this._file = Gio.File.new_for_path(path);
-        this._load();
+        this._loadSync();
     }
 
-    private async _load(): Promise<void> {
+    private _loadSync(): void {
         try {
             if (!this._file.query_exists(null)) {
                 this._loaded = true;
                 return;
             }
-            
-            return new Promise((resolve, reject) => {
-                this._file.load_contents_async(null, (file, res) => {
-                    try {
-                        if (!file) {
-                            this._loaded = true;
-                            resolve();
-                            return;
-                        }
-                        const [ok, contents] = file.load_contents_finish(res);
-                        if (ok && contents) {
-                            const text = UTF8_DECODER.decode(contents);
-                            try {
-                                const loaded = JSON.parse(text);
-                                if (loaded && typeof loaded === 'object') {
-                                    this._history = {
-                                        daily: loaded.daily || {},
-                                        monthly: loaded.monthly || {},
-                                        appUsage: loaded.appUsage || {},
-                                    };
-                                    this._lastSavedJson = text;
-                                }
-                            } catch (parseErr) {
-                                logError(parseErr as Error, 'SpeedMeter: Corrupt stats.json');
-                            }
-                        }
-                        this._loaded = true;
-                        this._flushPendingUpdates();
-                        resolve();
-                    } catch (e) {
-                        this._loaded = true;
-                        reject(e);
+
+            const [ok, contents] = this._file.load_contents(null);
+            if (ok && contents) {
+                const text = UTF8_DECODER.decode(contents);
+                try {
+                    const loaded = JSON.parse(text);
+                    if (loaded && typeof loaded === 'object') {
+                        this._history = {
+                            daily: loaded.daily || {},
+                            monthly: loaded.monthly || {},
+                            appUsage: loaded.appUsage || {},
+                        };
+                        this._lastSavedJson = text;
                     }
-                });
-            });
+                } catch (parseErr) {
+                    logError(parseErr as Error, 'SpeedMeter: Corrupt stats.json');
+                }
+            }
         } catch (e) {
-            this._loaded = true;
             logError(e as Error, 'SpeedMeter: Failed to load stats');
+        } finally {
+            this._loaded = true;
+            this._flushPendingUpdates();
         }
     }
 
@@ -85,7 +71,42 @@ export class StatsManager {
         this._pendingUpdates = [];
     }
 
+    getDailyData(): Record<string, TrafficData> {
+        return this._history.daily;
+    }
+
+    getMonthlyData(): Record<string, TrafficData> {
+        return this._history.monthly;
+    }
+
+    saveSync(): void {
+        if (!this._loaded) return;
+        try {
+            const json = JSON.stringify(this._history);
+            if (json === this._lastSavedJson) return;
+
+            const parent = this._file.get_parent();
+            if (parent && !parent.query_exists(null)) {
+                parent.make_directory_with_parents(null);
+            }
+
+            const [ok] = this._file.replace_contents(
+                UTF8_ENCODER.encode(json),
+                null,
+                false,
+                Gio.FileCreateFlags.REPLACE_DESTINATION,
+                null
+            );
+            if (ok) {
+                this._lastSavedJson = json;
+            }
+        } catch (e) {
+            logError(e as Error, 'SpeedMeter: Failed to save stats synchronously');
+        }
+    }
+
     async save(): Promise<void> {
+        if (!this._loaded || this._saving) return;
         try {
             const json = JSON.stringify(this._history);
             
@@ -97,6 +118,7 @@ export class StatsManager {
                 parent.make_directory_with_parents(null);
             }
 
+            this._saving = true;
             return new Promise((resolve, reject) => {
                 this._file.replace_contents_async(
                     UTF8_ENCODER.encode(json),
@@ -105,6 +127,7 @@ export class StatsManager {
                     Gio.FileCreateFlags.REPLACE_DESTINATION,
                     null,
                     (file, res) => {
+                        this._saving = false;
                         try {
                             if (!file) {
                                 resolve();
@@ -122,6 +145,7 @@ export class StatsManager {
                 );
             });
         } catch (e) {
+            this._saving = false;
             logError(e as Error, 'SpeedMeter: Failed to save stats');
         }
     }

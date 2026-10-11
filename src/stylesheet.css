@@ -1,144 +1,195 @@
 /*
  * Internet Speed Meter — Stylesheet
- * Modern Standard & Clean Style for GNOME 45+
+ * Ultra-Modern Glassmorphic UI & Refined Aesthetics for GNOME 45+
  */
 
-/* Panel Indicator */
+/* ==========================================================================
+   Top Panel Indicator
+   ========================================================================== */
+
 .speed-meter-box {
-    spacing: 4px;
-    padding: 0 4px;
-    margin: 0;
-    transition: background-color 0.25s;
+    spacing: 5px;
+    padding: 2px 7px;
+    margin: 1px 2px;
+    border-radius: 9999px;
+    background-color: transparent;
+    transition: background-color 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .speed-meter-box:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.speed-meter-box:active {
+    background-color: rgba(255, 255, 255, 0.18);
 }
 
 .speed-meter-label {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", Cantarell, Ubuntu, sans-serif;
     font-variant-numeric: tabular-nums;
     font-size: 9.5pt;
-    font-weight: 500;
-    color: #eeeeee;
+    font-weight: 600;
+    color: #f6f8fa;
+    letter-spacing: 0.2px;
+}
+
+.speed-meter-arrow {
+    font-weight: 800;
+    font-size: 8.5pt;
+    margin-right: 1px;
 }
 
 .speed-meter-download-label {
     text-align: right;
-    min-width: 64px;
+    min-width: 60px;
+    color: #4cd3e6; /* Vibrant Cyan */
 }
 
 .speed-meter-upload-label {
     text-align: left;
-    min-width: 64px;
+    min-width: 60px;
+    color: #f78166; /* Vibrant Coral */
 }
 
 .speed-meter-sep-label {
     text-align: center;
-    color: rgba(255, 255, 255, 0.35);
-    margin: 0 2px;
+    color: rgba(255, 255, 255, 0.25);
+    font-weight: 300;
+    margin: 0 1px;
 }
 
 .speed-meter-single-label {
     text-align: center;
+    color: #f6f8fa;
 }
 
-.speed-meter-icon {
-    icon-size: 14px;
-    color: #3584e4;
-    margin-right: 4px;
-}
+/* ==========================================================================
+   Popup Menu Container & Hero Header
+   ========================================================================== */
 
-/* Menu Styling */
 .speed-meter-menu-container {
     padding: 0;
-    min-width: 320px;
+    min-width: 340px;
 }
 
 .speed-meter-dashboard {
-    background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    margin: 4px 6px 6px 6px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    margin: 4px 8px 6px 8px;
     padding: 0;
     overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .speed-meter-dashboard-header {
-    padding: 10px 16px;
+    padding: 12px 14px 10px 14px;
+    spacing: 10px;
+    background-gradient-direction: vertical;
+    background-gradient-start: rgba(255, 255, 255, 0.05);
+    background-gradient-end: rgba(255, 255, 255, 0.01);
+}
+
+/* Network Info 2x2 Clean Grid */
+.speed-meter-network-info-grid {
     spacing: 8px;
 }
 
-.speed-meter-network-info-grid {
-    spacing: 4px;
+.speed-meter-network-row {
+    spacing: 8px;
 }
 
-.speed-meter-info-item {
-    spacing: 4px;
+.speed-meter-info-card {
+    background-color: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 9px;
+    padding: 6px 10px;
+    spacing: 3px;
+    transition: background-color 0.2s;
+}
+
+.speed-meter-info-card:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.speed-meter-info-badge-row {
+    spacing: 5px;
+    align-items: center;
+}
+
+.speed-meter-info-icon {
+    icon-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
 }
 
 .speed-meter-info-label {
-    font-size: 7.5pt;
+    font-size: 7pt;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.45);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
 }
 
 .speed-meter-info-value {
+    font-family: system-ui, -apple-system, Cantarell, sans-serif;
     font-size: 8.5pt;
-    font-weight: 500;
-    color: #ffffff;
-}
-
-/* Premium Card Style for Stats */
-.speed-meter-card {
-    background-color: rgba(255, 255, 255, 0.04);
-    border-radius: 10px;
-    margin: 2px 6px;
-    padding: 8px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.speed-meter-stat-label {
     font-weight: 600;
-    font-size: 9pt;
     color: #ffffff;
-    margin-bottom: 0px;
 }
 
-.speed-meter-stat-value {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 9.5pt;
-    font-weight: 700;
+/* Active App Pill */
+.speed-meter-app-tracker-bar {
+    background-color: rgba(53, 132, 228, 0.12);
+    border: 1px solid rgba(53, 132, 228, 0.25);
+    border-radius: 8px;
+    padding: 5px 10px;
+    spacing: 6px;
+    align-items: center;
+}
+
+.speed-meter-app-tracker-icon {
+    icon-size: 13px;
     color: #3584e4;
 }
 
-.speed-meter-stat-sub {
-    font-size: 8pt;
-    color: rgba(255, 255, 255, 0.4);
+.speed-meter-app-tracker-title {
+    font-size: 7.5pt;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
 }
 
-/* Graph Section */
+.speed-meter-app-tracker-name {
+    font-size: 8pt;
+    font-weight: 700;
+    color: #78aeed;
+}
+
+/* ==========================================================================
+   Activity Wave Graph Container & Segmented Tabs
+   ========================================================================== */
+
 .speed-meter-graph-container {
-    background-color: rgba(0, 0, 0, 0.2);
-    padding: 6px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background-color: rgba(10, 14, 22, 0.7);
+    padding: 8px 12px 10px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .speed-meter-tabs-bar {
-    background-color: rgba(255, 255, 255, 0.04);
-    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 9px;
     padding: 2px;
-    margin-bottom: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .speed-meter-tab-button {
     background-color: transparent;
-    border-radius: 6px;
-    padding: 3px 8px;
-    transition: all 0.2s ease;
+    border-radius: 7px;
+    padding: 4px 10px;
+    transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .speed-meter-tab-button:hover {
@@ -146,137 +197,233 @@
 }
 
 .speed-meter-tab-button.speed-meter-tab-active {
-    background-color: #3584e4;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    background-gradient-direction: vertical;
+    background-gradient-start: #3584e4;
+    background-gradient-end: #1c71d8;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
 .speed-meter-tab-content {
-    spacing: 5px;
+    spacing: 6px;
     align-items: center;
     justify-content: center;
 }
 
 .speed-meter-tab-icon {
     icon-size: 13px;
+    color: #ffffff;
+}
+
+.speed-meter-tab-label {
+    font-size: 8pt;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.2px;
+}
+
+/* ==========================================================================
+   Stats Cards (Today, This Month, Last Month, Session)
+   ========================================================================== */
+
+.speed-meter-card {
+    background-color: rgba(255, 255, 255, 0.035);
+    border-radius: 11px;
+    margin: 3px 8px;
+    padding: 9px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: all 0.2s ease;
+}
+
+.speed-meter-card:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.speed-meter-stat-header {
+    spacing: 6px;
+    align-items: center;
+}
+
+.speed-meter-stat-bullet {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: #3584e4;
+    margin-right: 2px;
+}
+
+.speed-meter-stat-label {
+    font-weight: 700;
+    font-size: 8.5pt;
+    color: rgba(255, 255, 255, 0.7);
+    letter-spacing: 0.3px;
+}
+
+.speed-meter-stat-value {
+    font-family: system-ui, -apple-system, Cantarell, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 10pt;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.speed-meter-stat-sub {
+    font-family: system-ui, -apple-system, Cantarell, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 7.8pt;
+    color: rgba(255, 255, 255, 0.45);
+    margin-top: 1px;
+}
+
+/* ==========================================================================
+   Bottom Action Buttons
+   ========================================================================== */
+
+.speed-meter-actions-bar {
+    spacing: 8px;
+    margin: 4px 8px 6px 8px;
+}
+
+.speed-meter-button {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 9px;
+    padding: 6px 10px;
+    margin: 0;
+    transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.speed-meter-button:hover {
+    background-color: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.speed-meter-button:active {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+.speed-meter-speedtest-btn {
+    background-gradient-direction: horizontal;
+    background-gradient-start: rgba(0, 210, 255, 0.15);
+    background-gradient-end: rgba(53, 132, 228, 0.15);
+    border-color: rgba(0, 210, 255, 0.35);
+}
+
+.speed-meter-speedtest-btn:hover {
+    background-gradient-start: rgba(0, 210, 255, 0.25);
+    background-gradient-end: rgba(53, 132, 228, 0.25);
+    border-color: rgba(0, 210, 255, 0.55);
+    box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);
 }
 
 .speed-meter-button-content {
-    spacing: 5px;
+    spacing: 6px;
     align-items: center;
     justify-content: center;
 }
 
 .speed-meter-button-icon {
     icon-size: 14px;
-}
-
-.speed-meter-tab-label {
-    font-size: 8pt;
-    font-weight: 600;
     color: #ffffff;
 }
 
-/* App Usage History Panel Styling */
-.speed-meter-app-panel {
-    background-color: rgba(255, 255, 255, 0.04);
-    border-radius: 12px;
-    margin: 4px 6px;
-    padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+.speed-meter-button-label {
+    font-weight: 700;
+    font-size: 8.5pt;
+    color: #ffffff;
+    letter-spacing: 0.2px;
 }
 
-.speed-meter-app-box {
-    padding: 10px 12px;
-    spacing: 8px;
-}
+/* ==========================================================================
+   Speedtest Panel (Cyberpunk / Modern Terminal Look)
+   ========================================================================== */
 
-.speed-meter-app-list {
-    spacing: 6px;
-    margin-top: 4px;
-}
-
-/* Ookla-Inspired Speedtest Panel Styling */
 .speed-meter-ookla-panel {
-    background-color: #0d111a;
-    border: 1px solid rgba(0, 210, 255, 0.25);
+    background-color: #0c1017;
+    border: 1px solid rgba(0, 210, 255, 0.3);
     border-radius: 14px;
-    margin: 6px;
+    margin: 6px 8px;
     padding: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(0, 210, 255, 0.03);
 }
 
 .speed-meter-ookla-box {
-    padding: 12px 14px;
-    spacing: 10px;
-}
-
-.speed-meter-ookla-header {
-    margin-bottom: 2px;
+    padding: 14px 16px;
+    spacing: 12px;
 }
 
 .speed-meter-ookla-brand {
     font-size: 11pt;
     font-weight: 900;
     color: #00d2ff;
-    letter-spacing: 1.5px;
+    letter-spacing: 2px;
 }
 
 .speed-meter-ookla-server {
     font-size: 7.5pt;
+    font-weight: 600;
     color: rgba(255, 255, 255, 0.5);
-    margin-top: 1px;
+    margin-top: 2px;
+}
+
+.speed-meter-close-btn {
+    padding: 3px 8px;
+    border-radius: 7px;
 }
 
 .speed-meter-ookla-ping-strip {
     background-color: rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
-    padding: 6px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 9px;
+    padding: 7px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .speed-meter-ookla-ping-item {
-    spacing: 2px;
+    spacing: 3px;
 }
 
 .speed-meter-ookla-ping-lbl {
     font-size: 7pt;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.4);
-    letter-spacing: 0.8px;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 1px;
 }
 
 .speed-meter-ookla-ping-val {
-    font-family: "JetBrains Mono", monospace;
+    font-family: system-ui, -apple-system, Cantarell, monospace;
+    font-variant-numeric: tabular-nums;
     font-size: 9.5pt;
-    font-weight: 700;
+    font-weight: 800;
     color: #ffffff;
 }
 
-/* Ookla Gauge Cards */
 .speed-meter-ookla-gauges-row {
-    spacing: 8px;
+    spacing: 10px;
 }
 
 .speed-meter-ookla-gauge-card {
-    border-radius: 10px;
-    padding: 10px 8px;
+    border-radius: 11px;
+    padding: 12px 10px;
     margin: 0;
     align-items: center;
 }
 
 .speed-meter-down-card {
     background-color: rgba(0, 210, 255, 0.06);
-    border: 1px solid rgba(0, 210, 255, 0.2);
+    border: 1px solid rgba(0, 210, 255, 0.25);
+    box-shadow: inset 0 0 16px rgba(0, 210, 255, 0.04);
 }
 
 .speed-meter-up-card {
     background-color: rgba(224, 86, 253, 0.06);
-    border: 1px solid rgba(224, 86, 253, 0.2);
+    border: 1px solid rgba(224, 86, 253, 0.25);
+    box-shadow: inset 0 0 16px rgba(224, 86, 253, 0.04);
 }
 
 .speed-meter-ookla-gauge-title {
     font-size: 7.5pt;
     font-weight: 800;
-    letter-spacing: 0.8px;
+    letter-spacing: 1px;
 }
 
 .speed-meter-down-title {
@@ -288,10 +435,11 @@
 }
 
 .speed-meter-ookla-gauge-value {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 20pt;
-    font-weight: 800;
-    margin: 4px 0;
+    font-family: system-ui, -apple-system, Cantarell, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 22pt;
+    font-weight: 900;
+    margin: 2px 0;
 }
 
 .speed-meter-down-value {
@@ -304,68 +452,45 @@
 
 .speed-meter-ookla-gauge-unit {
     font-size: 8pt;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 0.5px;
 }
 
 .speed-meter-ookla-status-box {
-    padding: 2px 0;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .speed-meter-ookla-status-text {
     font-size: 7.5pt;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.6);
-    letter-spacing: 0.5px;
-}
-
-/* Big Ookla GO Button */
-.speed-meter-ookla-go-row {
-    margin-top: 4px;
+    color: rgba(255, 255, 255, 0.7);
+    letter-spacing: 0.6px;
+    text-align: center;
 }
 
 .speed-meter-ookla-go-button {
-    background-color: transparent;
-    border: 2px solid #00d2ff;
-    border-radius: 20px;
-    padding: 6px 0;
-    transition: all 0.25s ease;
+    background-gradient-direction: horizontal;
+    background-gradient-start: #00d2ff;
+    background-gradient-end: #3584e4;
+    border-radius: 10px;
+    padding: 8px 0;
+    border: none;
+    box-shadow: 0 4px 14px rgba(0, 210, 255, 0.35);
+    transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .speed-meter-ookla-go-button:hover {
-    background-color: rgba(0, 210, 255, 0.15);
-    box-shadow: 0 0 12px rgba(0, 210, 255, 0.4);
+    box-shadow: 0 4px 20px rgba(0, 210, 255, 0.6);
 }
 
 .speed-meter-ookla-go-label {
     font-size: 11pt;
     font-weight: 900;
-    color: #00d2ff;
-    letter-spacing: 2px;
+    color: #0a0e14;
+    letter-spacing: 3px;
 }
 
-.speed-meter-close-btn {
-    padding: 2px 8px;
-    margin: 0;
-}
-
-/* Buttons and Items */
-.speed-meter-button {
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 4px 12px;
-    margin: 4px 6px;
-    transition: all 0.2s;
-}
-
-.speed-meter-button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    border-color: #3584e4;
-}
-
-.speed-meter-button-label {
-    font-weight: 600;
-    font-size: 9.5pt;
-    color: #ffffff;
-}
