@@ -70,22 +70,22 @@
 
 .speed-meter-menu-container {
     padding: 0;
-    min-width: 340px;
+    min-width: 360px;
 }
 
 .speed-meter-dashboard {
     background-color: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 14px;
-    margin: 4px 8px 6px 8px;
+    border-radius: 12px;
+    margin: 3px 6px 4px 6px;
     padding: 0;
     overflow: hidden;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .speed-meter-dashboard-header {
-    padding: 12px 14px 10px 14px;
-    spacing: 10px;
+    padding: 8px 10px 7px 10px;
+    spacing: 6px;
     background-gradient-direction: vertical;
     background-gradient-start: rgba(255, 255, 255, 0.05);
     background-gradient-end: rgba(255, 255, 255, 0.01);
@@ -93,19 +93,19 @@
 
 /* Network Info 2x2 Clean Grid */
 .speed-meter-network-info-grid {
-    spacing: 8px;
+    spacing: 5px;
 }
 
 .speed-meter-network-row {
-    spacing: 8px;
+    spacing: 6px;
 }
 
 .speed-meter-info-card {
     background-color: rgba(255, 255, 255, 0.035);
     border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 9px;
-    padding: 6px 10px;
-    spacing: 3px;
+    border-radius: 8px;
+    padding: 4px 8px;
+    spacing: 2px;
     transition: background-color 0.2s;
 }
 
@@ -114,21 +114,21 @@
 }
 
 .speed-meter-info-badge-row {
-    spacing: 5px;
+    spacing: 4px;
     align-items: center;
 }
 
 .speed-meter-info-icon {
-    icon-size: 13px;
+    icon-size: 12px;
     color: rgba(255, 255, 255, 0.5);
 }
 
 .speed-meter-info-label {
-    font-size: 7pt;
+    font-size: 6.8pt;
     font-weight: 700;
     color: rgba(255, 255, 255, 0.45);
     text-transform: uppercase;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.2px;
 }
 
 .speed-meter-info-value {
@@ -142,23 +142,23 @@
 .speed-meter-app-tracker-bar {
     background-color: rgba(53, 132, 228, 0.12);
     border: 1px solid rgba(53, 132, 228, 0.25);
-    border-radius: 8px;
-    padding: 5px 10px;
-    spacing: 6px;
+    border-radius: 7px;
+    padding: 4px 8px;
+    spacing: 5px;
     align-items: center;
 }
 
 .speed-meter-app-tracker-icon {
-    icon-size: 13px;
+    icon-size: 12px;
     color: #3584e4;
 }
 
 .speed-meter-app-tracker-title {
-    font-size: 7.5pt;
+    font-size: 7.2pt;
     font-weight: 700;
     color: rgba(255, 255, 255, 0.5);
     text-transform: uppercase;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.4px;
 }
 
 .speed-meter-app-tracker-name {
@@ -173,15 +173,15 @@
 
 .speed-meter-graph-container {
     background-color: rgba(10, 14, 22, 0.7);
-    padding: 8px 12px 10px 12px;
+    padding: 6px 10px 8px 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .speed-meter-tabs-bar {
     background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 9px;
+    border-radius: 8px;
     padding: 2px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -222,24 +222,25 @@
 }
 
 /* ==========================================================================
-   Stats Cards (Today, This Month, Last Month, Session)
+   Unified Stats Card (Single Card Container)
    ========================================================================== */
 
-.speed-meter-card {
+.speed-meter-stats-card {
     background-color: rgba(255, 255, 255, 0.035);
-    border-radius: 11px;
-    margin: 3px 8px;
-    padding: 9px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    margin: 2px 6px;
+    padding: 6px 12px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
 }
 
-.speed-meter-card:hover {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
+.speed-meter-stat-row {
+    spacing: 8px;
+    padding: 5px 2px;
+    align-items: center;
 }
 
-.speed-meter-stat-header {
+.speed-meter-stat-left {
     spacing: 6px;
     align-items: center;
 }
@@ -248,31 +249,40 @@
     width: 6px;
     height: 6px;
     border-radius: 9999px;
-    background-color: #3584e4;
     margin-right: 2px;
 }
 
 .speed-meter-stat-label {
-    font-weight: 700;
+    font-weight: 600;
     font-size: 8.5pt;
-    color: rgba(255, 255, 255, 0.7);
-    letter-spacing: 0.3px;
+    color: rgba(255, 255, 255, 0.75);
+    letter-spacing: 0.2px;
+}
+
+.speed-meter-stat-right {
+    spacing: 1px;
+    align-items: flex-end;
 }
 
 .speed-meter-stat-value {
     font-family: system-ui, -apple-system, Cantarell, monospace;
     font-variant-numeric: tabular-nums;
-    font-size: 10pt;
-    font-weight: 800;
+    font-size: 9.2pt;
+    font-weight: 700;
     color: #ffffff;
 }
 
 .speed-meter-stat-sub {
     font-family: system-ui, -apple-system, Cantarell, monospace;
     font-variant-numeric: tabular-nums;
-    font-size: 7.8pt;
+    font-size: 7.5pt;
     color: rgba(255, 255, 255, 0.45);
-    margin-top: 1px;
+}
+
+.speed-meter-stat-divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.05);
+    margin: 1px 0;
 }
 
 /* ==========================================================================
@@ -280,15 +290,15 @@
    ========================================================================== */
 
 .speed-meter-actions-bar {
-    spacing: 8px;
-    margin: 4px 8px 6px 8px;
+    spacing: 6px;
+    margin: 3px 6px 4px 6px;
 }
 
 .speed-meter-button {
     background-color: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 9px;
-    padding: 6px 10px;
+    border-radius: 8px;
+    padding: 5px 8px;
     margin: 0;
     transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }

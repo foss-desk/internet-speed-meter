@@ -26,6 +26,13 @@ const Mb = Kb * 1000;
 
 const UTF8_DECODER = new TextDecoder('utf-8');
 
+interface StatRowWidgets {
+    valueLabel: St.Label;
+    subLabel: St.Label;
+    lastTotal: string;
+    lastSub: string;
+}
+
 /**
  * HIGH-PERFORMANCE INTERNET SPEED METER
  * Optimized for minimal CPU/Memory/RAM footprint.
@@ -84,10 +91,11 @@ export default class SpeedMeterExtension extends Extension {
     private _lastDownText: string = '';
     private _lastUpText: string = '';
 
-    private _menuToday: PopupMenu.PopupBaseMenuItem | null = null;
-    private _menuThisMonth: PopupMenu.PopupBaseMenuItem | null = null;
-    private _menuLastMonth: PopupMenu.PopupBaseMenuItem | null = null;
-    private _menuSession: PopupMenu.PopupBaseMenuItem | null = null;
+    private _statsSectionItem: PopupMenu.PopupBaseMenuItem | null = null;
+    private _statToday: StatRowWidgets | null = null;
+    private _statThisMonth: StatRowWidgets | null = null;
+    private _statLastMonth: StatRowWidgets | null = null;
+    private _statSession: StatRowWidgets | null = null;
 
     enable(): void {
         this._prevRx = 0;
@@ -168,6 +176,10 @@ export default class SpeedMeterExtension extends Extension {
 
     private _buildMenu(): void {
         if (!this._indicator) return;
+
+        if ((this._indicator.menu as any).box) {
+            (this._indicator.menu as any).box.add_style_class_name('speed-meter-menu-container');
+        }
 
         // --- DASHBOARD SECTION (Grid + Graph) ---
         const dashboardBox = new St.BoxLayout({
@@ -279,17 +291,34 @@ export default class SpeedMeterExtension extends Extension {
         this._speedTestPanelItem = this._buildSpeedTestPanel();
         (this._indicator.menu as any).addMenuItem(this._speedTestPanelItem);
 
-        // --- STATS SECTION ---
-        this._menuToday = this._createStatItem('Today', '#3584e4');
-        this._menuThisMonth = this._createStatItem('This Month', '#2ec27e');
-        this._menuLastMonth = this._createStatItem('Last Month', '#c061cb');
-        this._menuSession = this._createStatItem('Current Session', '#ffbe6f');
+        // --- STATS SECTION (Single Unified Card) ---
+        const statsBox = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            style_class: 'speed-meter-stats-card',
+        });
 
-        (this._indicator.menu as any).addMenuItem(this._menuToday);
-        (this._indicator.menu as any).addMenuItem(this._menuThisMonth);
-        (this._indicator.menu as any).addMenuItem(this._menuLastMonth);
-        (this._indicator.menu as any).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        (this._indicator.menu as any).addMenuItem(this._menuSession);
+        const todayRow = this._createStatRow('Today', '#3584e4');
+        const thisMonthRow = this._createStatRow('This Month', '#2ec27e');
+        const lastMonthRow = this._createStatRow('Last Month', '#c061cb');
+        const sessionRow = this._createStatRow('Current Session', '#ffbe6f');
+
+        this._statToday = todayRow.widgets;
+        this._statThisMonth = thisMonthRow.widgets;
+        this._statLastMonth = lastMonthRow.widgets;
+        this._statSession = sessionRow.widgets;
+
+        statsBox.add_child(todayRow.container);
+        statsBox.add_child(this._createStatDivider());
+        statsBox.add_child(thisMonthRow.container);
+        statsBox.add_child(this._createStatDivider());
+        statsBox.add_child(lastMonthRow.container);
+        statsBox.add_child(this._createStatDivider());
+        statsBox.add_child(sessionRow.container);
+
+        this._statsSectionItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        this._statsSectionItem.add_child(statsBox);
+        (this._indicator.menu as any).addMenuItem(this._statsSectionItem);
 
         // Action Buttons Row (Reset, Speedtest, Settings)
         const actionsBox = new St.BoxLayout({
@@ -340,10 +369,7 @@ export default class SpeedMeterExtension extends Extension {
     }
 
     private _setStatsVisible(visible: boolean): void {
-        if (this._menuToday) (this._menuToday as any).visible = visible;
-        if (this._menuThisMonth) (this._menuThisMonth as any).visible = visible;
-        if (this._menuLastMonth) (this._menuLastMonth as any).visible = visible;
-        if (this._menuSession) (this._menuSession as any).visible = visible;
+        if (this._statsSectionItem) (this._statsSectionItem as any).visible = visible;
     }
 
     private _createInfoCard(iconName: string, labelText: string): { container: St.BoxLayout, value: St.Label } {
@@ -412,33 +438,69 @@ export default class SpeedMeterExtension extends Extension {
         });
     }
 
-    private _createStatItem(label: string, dotColor: string = '#3584e4'): PopupMenu.PopupBaseMenuItem {
-        const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-card' });
-        const mainBox = new St.BoxLayout({ vertical: true, x_expand: true });
-        
-        const headerRow = new St.BoxLayout({ vertical: false, style_class: 'speed-meter-stat-header', x_expand: true });
+    private _createStatDivider(): St.Widget {
+        return new St.Widget({
+            style_class: 'speed-meter-stat-divider',
+            x_expand: true,
+        });
+    }
+
+    private _createStatRow(label: string, dotColor: string = '#3584e4'): { container: St.BoxLayout, widgets: StatRowWidgets } {
+        const container = new St.BoxLayout({
+            vertical: false,
+            x_expand: true,
+            style_class: 'speed-meter-stat-row',
+        });
+
+        const leftBox = new St.BoxLayout({
+            vertical: false,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-stat-left',
+        });
         const dot = new St.Widget({
             style_class: 'speed-meter-stat-bullet',
-            style: `background-color: ${dotColor};`
+            style: `background-color: ${dotColor};`,
+            y_align: Clutter.ActorAlign.CENTER,
         });
-        const titleLabel = new St.Label({ text: label, style_class: 'speed-meter-stat-label' });
-        headerRow.add_child(dot);
-        headerRow.add_child(titleLabel);
+        const titleLabel = new St.Label({
+            text: label,
+            style_class: 'speed-meter-stat-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        leftBox.add_child(dot);
+        leftBox.add_child(titleLabel);
 
-        const valueLabel = new St.Label({ text: '0 B', style_class: 'speed-meter-stat-value' });
-        const subLabel = new St.Label({ text: '(↓ 0 B  ↑ 0 B)', style_class: 'speed-meter-stat-sub' });
+        const rightBox = new St.BoxLayout({
+            vertical: true,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-stat-right',
+        });
+        const valueLabel = new St.Label({
+            text: '0 B',
+            style_class: 'speed-meter-stat-value',
+            x_align: Clutter.ActorAlign.END,
+        });
+        const subLabel = new St.Label({
+            text: '(\u2193 0 B  \u2191 0 B)',
+            style_class: 'speed-meter-stat-sub',
+            x_align: Clutter.ActorAlign.END,
+        });
+        rightBox.add_child(valueLabel);
+        rightBox.add_child(subLabel);
 
-        mainBox.add_child(headerRow);
-        mainBox.add_child(valueLabel);
-        mainBox.add_child(subLabel);
-        
-        item.add_child(mainBox);
-        (item as any)._valueLabel = valueLabel;
-        (item as any)._subLabel = subLabel;
-        (item as any)._lastTotal = '';
-        (item as any)._lastSub = '';
-        
-        return item;
+        container.add_child(leftBox);
+        container.add_child(rightBox);
+
+        const widgets: StatRowWidgets = {
+            valueLabel,
+            subLabel,
+            lastTotal: '',
+            lastSub: '',
+        };
+
+        return { container, widgets };
     }
 
     private _updateMenu(): void {
@@ -448,10 +510,10 @@ export default class SpeedMeterExtension extends Extension {
         const thisMonth = this._statsManager.getThisMonth();
         const lastMonth = this._statsManager.getLastMonth();
 
-        this._updateStatItem(this._menuToday, today.rx, today.tx);
-        this._updateStatItem(this._menuThisMonth, thisMonth.rx, thisMonth.tx);
-        this._updateStatItem(this._menuLastMonth, lastMonth.rx, lastMonth.tx);
-        this._updateStatItem(this._menuSession, this._sessionRx, this._sessionTx);
+        this._updateStatRow(this._statToday, today.rx, today.tx);
+        this._updateStatRow(this._statThisMonth, thisMonth.rx, thisMonth.tx);
+        this._updateStatRow(this._statLastMonth, lastMonth.rx, lastMonth.tx);
+        this._updateStatRow(this._statSession, this._sessionRx, this._sessionTx);
         
         if (this._activityGraph) {
             this._activityGraph.updateFromStats(this._statsManager);
@@ -777,19 +839,19 @@ export default class SpeedMeterExtension extends Extension {
         } catch (e) {}
     }
 
-    private _updateStatItem(item: PopupMenu.PopupBaseMenuItem | null, rx: number, tx: number): void {
-        if (!item) return;
+    private _updateStatRow(stat: StatRowWidgets | null, rx: number, tx: number): void {
+        if (!stat) return;
         const totalStr = this._fmtSize(rx + tx);
         const subStr = `(\u2193 ${this._fmtSize(rx)}  \u2191 ${this._fmtSize(tx)})`;
         
         // Change Guard: Only update if strings differ to save CPU/Layout work
-        if ((item as any)._lastTotal !== totalStr) {
-            (item as any)._valueLabel.set_text(totalStr);
-            (item as any)._lastTotal = totalStr;
+        if (stat.lastTotal !== totalStr) {
+            stat.valueLabel.set_text(totalStr);
+            stat.lastTotal = totalStr;
         }
-        if ((item as any)._lastSub !== subStr) {
-            (item as any)._subLabel.set_text(subStr);
-            (item as any)._lastSub = subStr;
+        if (stat.lastSub !== subStr) {
+            stat.subLabel.set_text(subStr);
+            stat.lastSub = subStr;
         }
     }
 
@@ -1099,10 +1161,11 @@ export default class SpeedMeterExtension extends Extension {
         this._sepLabel = null;
         this._upLabel = null;
         this._activityGraph = null;
-        this._menuToday = null;
-        this._menuThisMonth = null;
-        this._menuLastMonth = null;
-        this._menuSession = null;
+        this._statsSectionItem = null;
+        this._statToday = null;
+        this._statThisMonth = null;
+        this._statLastMonth = null;
+        this._statSession = null;
         this._ifaceValue = null;
         this._vpnValue = null;
         this._ipValue = null;
