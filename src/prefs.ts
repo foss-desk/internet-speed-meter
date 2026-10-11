@@ -12,15 +12,20 @@ import { StatsManager } from './stats.js';
 export default class SpeedMeterPreferences extends ExtensionPreferences {
     async fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
         const settings = this.getSettings();
-        const page = new Adw.PreferencesPage();
-        window.add(page);
+
+        // ================= PAGE 1: DISPLAY & MONITOR =================
+        const displayPage = new Adw.PreferencesPage({
+            title: 'Display & Monitor',
+            iconName: 'preferences-desktop-display-symbolic',
+        });
+        window.add(displayPage);
 
         // --- General Settings Group ---
         const generalGroup = new Adw.PreferencesGroup({
             title: 'General',
-            description: 'Configure how network speed is measured and displayed.',
+            description: 'Configure network speed sampling rate and measurement units.',
         });
-        page.add(generalGroup);
+        displayPage.add(generalGroup);
 
         // Refresh Interval
         const refreshRow = new Adw.ActionRow({
@@ -44,25 +49,22 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // Monitored Interface
         const ifaceRow = new Adw.EntryRow({
             title: 'Monitored Interface',
-            text: settings.get_string('monitored-interface'),
         });
-        ifaceRow.connect('changed', (entry) => {
-            settings.set_string('monitored-interface', entry.get_text().trim());
-        });
+        settings.bind('monitored-interface', ifaceRow, 'text', Gio.SettingsBindFlags.DEFAULT);
         generalGroup.add(ifaceRow);
 
         // Use Bits instead of Bytes
         const bitsRow = new Adw.SwitchRow({
-            title: 'Display in Bits (Mbps/Kbps)',
-            subtitle: 'Show speeds in bits per second instead of bytes',
+            title: 'Display in Bits (Mbps / Kbps)',
+            subtitle: 'Show speeds in bits per second instead of bytes per second',
         });
         settings.bind('use-bits', bitsRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         generalGroup.add(bitsRow);
 
         // Adaptive Power Saver
         const powerRow = new Adw.SwitchRow({
-            title: 'Adaptive Power & Data Saver',
-            subtitle: 'Automatically reduce polling frequency when on battery power to conserve CPU and data',
+            title: 'Adaptive Power & Battery Saver',
+            subtitle: 'Automatically reduce polling frequency when on battery power to conserve energy',
         });
         settings.bind('adaptive-power-saver', powerRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         generalGroup.add(powerRow);
@@ -70,13 +72,14 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // --- Visibility & Auto-Hide Group ---
         const visibilityGroup = new Adw.PreferencesGroup({
             title: 'Visibility & Auto-Hide',
-            description: 'Choose panel visibility and idle behavior.',
+            description: 'Customize top panel speed indicators and idle behavior.',
         });
-        page.add(visibilityGroup);
+        displayPage.add(visibilityGroup);
 
         // Show Download
         const downloadRow = new Adw.SwitchRow({
             title: 'Show Download Speed',
+            subtitle: 'Display incoming bandwidth rate on the top panel',
         });
         settings.bind('show-download', downloadRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(downloadRow);
@@ -84,6 +87,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // Show Upload
         const uploadRow = new Adw.SwitchRow({
             title: 'Show Upload Speed',
+            subtitle: 'Display outgoing bandwidth rate on the top panel',
         });
         settings.bind('show-upload', uploadRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(uploadRow);
@@ -91,7 +95,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // Show Top Apps
         const topAppsRow = new Adw.SwitchRow({
             title: 'Show Active Applications',
-            subtitle: 'Display active network processes in the dropdown menu',
+            subtitle: 'Identify and display top network processes in the dropdown menu',
         });
         settings.bind('show-top-apps', topAppsRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(topAppsRow);
@@ -99,7 +103,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // Auto-Hide Idle
         const autoHideRow = new Adw.SwitchRow({
             title: 'Auto-Hide When Idle',
-            subtitle: 'Hide top panel speed labels when total speed is below threshold',
+            subtitle: 'Temporarily hide panel speed numbers when total speed is below threshold',
         });
         settings.bind('auto-hide-idle', autoHideRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(autoHideRow);
@@ -107,7 +111,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // Idle Threshold
         const idleSpinRow = new Adw.ActionRow({
             title: 'Idle Threshold (KB/s)',
-            subtitle: 'Speed threshold under which indicator hides when auto-hide is active',
+            subtitle: 'Speed threshold under which panel indicators hide',
         });
         const idleSpin = new Gtk.SpinButton({
             adjustment: new Gtk.Adjustment({
@@ -123,17 +127,24 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         idleSpinRow.add_suffix(idleSpin);
         visibilityGroup.add(idleSpinRow);
 
+        // ================= PAGE 2: DATA & HISTORY =================
+        const dataPage = new Adw.PreferencesPage({
+            title: 'Data & History',
+            iconName: 'document-save-symbolic',
+        });
+        window.add(dataPage);
+
         // --- Data Quota & Alerts Group ---
         const quotaGroup = new Adw.PreferencesGroup({
             title: 'Data Quota & Alerts',
             description: 'Set monthly traffic limits and desktop warning notifications.',
         });
-        page.add(quotaGroup);
+        dataPage.add(quotaGroup);
 
         // Monthly Data Quota (GB)
         const quotaRow = new Adw.ActionRow({
             title: 'Monthly Data Quota (GB)',
-            subtitle: 'Set to 0 to disable quota tracking',
+            subtitle: 'Set to 0 to disable quota tracking and progress bar',
         });
         const quotaSpin = new Gtk.SpinButton({
             adjustment: new Gtk.Adjustment({
@@ -152,25 +163,27 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         // Quota Notifications
         const notifyRow = new Adw.SwitchRow({
             title: 'Desktop Quota Notifications',
-            subtitle: 'Show system notifications when reaching 80% and 100% of data limit',
+            subtitle: 'Show system desktop notifications when reaching 80% and 100% of quota',
         });
         settings.bind('quota-notify', notifyRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         quotaGroup.add(notifyRow);
 
         // --- Data Management & Export ---
         const dataGroup = new Adw.PreferencesGroup({
-            title: 'Data Management',
-            description: 'Export traffic usage history logs.',
+            title: 'Data Export',
+            description: 'Export traffic usage history logs to CSV format.',
         });
-        page.add(dataGroup);
+        dataPage.add(dataGroup);
 
         const exportRow = new Adw.ActionRow({
             title: 'Export Traffic History (CSV)',
-            subtitle: 'Save daily and monthly bandwidth records to a CSV file',
+            subtitle: 'Save daily and monthly bandwidth records to ~/speed-meter-stats.csv',
         });
 
         const exportBtn = new Gtk.Button({
             label: 'Export CSV',
+            iconName: 'document-save-symbolic',
+            cssClasses: ['suggested-action'],
             valign: Gtk.Align.CENTER,
         });
         exportBtn.connect('clicked', () => {
@@ -180,7 +193,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
                 const homeDir = GLib.get_home_dir();
                 const exportPath = GLib.build_filenamev([homeDir, 'speed-meter-stats.csv']);
                 const file = Gio.File.new_for_path(exportPath);
-                
+
                 file.replace_contents_async(
                     new TextEncoder().encode(csvData),
                     null,
@@ -208,10 +221,10 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
         // --- Monthly App Usage History Group ---
         const appGroup = new Adw.PreferencesGroup({
-            title: 'Monthly App Usage History',
-            description: 'Accumulated bandwidth consumed by applications for the current month.',
+            title: 'Monthly Application Traffic',
+            description: 'Top applications consuming bandwidth during the current month.',
         });
-        page.add(appGroup);
+        dataPage.add(appGroup);
 
         try {
             const statsMgr = new StatsManager(this.path);
@@ -219,16 +232,21 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
             if (appList.length === 0) {
                 const emptyRow = new Adw.ActionRow({
-                    title: 'No App Data Recorded',
-                    subtitle: 'Application traffic will accumulate here as applications use the network.',
+                    title: 'No Application Traffic Recorded Yet',
+                    subtitle: 'Bandwidth will be attributed to applications as network activity occurs.',
                 });
                 appGroup.add(emptyRow);
             } else {
                 for (const appItem of appList.slice(0, 10)) {
                     const row = new Adw.ActionRow({
                         title: appItem.appName,
-                        subtitle: `Monthly Bandwidth: ${this._fmtSize(appItem.bytes)}`,
+                        subtitle: `Monthly Total: ${this._fmtSize(appItem.bytes)}`,
                     });
+                    const icon = new Gtk.Image({
+                        iconName: 'application-x-executable-symbolic',
+                        pixelSize: 16,
+                    });
+                    row.add_prefix(icon);
                     appGroup.add(row);
                 }
             }

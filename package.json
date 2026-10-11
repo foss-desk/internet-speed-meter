@@ -1,6 +1,6 @@
 {
   "name": "speed-meter-gnome-extension",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "A lightweight GNOME Shell extension that displays real-time network upload/download speeds in the top panel.",
   "type": "module",
   "private": true,
@@ -28,7 +28,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "@girs/gjs": "latest",
+    "@girs/gjs": "^4.9.0",
     "@girs/gnome-shell": "latest",
     "typescript": "^5.4.0"
   },

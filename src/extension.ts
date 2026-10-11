@@ -4,6 +4,7 @@
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
+import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -25,6 +26,13 @@ const Mb = Kb * 1000;
 
 const UTF8_DECODER = new TextDecoder('utf-8');
 
+interface StatRowWidgets {
+    valueLabel: St.Label;
+    subLabel: St.Label;
+    lastTotal: string;
+    lastSub: string;
+}
+
 /**
  * HIGH-PERFORMANCE INTERNET SPEED METER
  * Optimized for minimal CPU/Memory/RAM footprint.
@@ -33,6 +41,7 @@ export default class SpeedMeterExtension extends Extension {
     private _prevRx: number = 0;
     private _prevTx: number = 0;
     private _prevTime: number = 0;
+    private _hasPrevStats: boolean = false;
     private _timeoutId: number = 0;
     private _saveTimeoutId: number = 0;
     private _indicator: PanelMenu.Button | null = null;
@@ -50,9 +59,11 @@ export default class SpeedMeterExtension extends Extension {
     private _publicIpValue: St.Label | null = null;
     private _speedTestPanelItem: PopupMenu.PopupBaseMenuItem | null = null;
     private _activeAppName: string = 'System';
+    private _activeAppLabel: St.Label | null = null;
     private _speedTestDownVal: St.Label | null = null;
     private _speedTestUpVal: St.Label | null = null;
     private _speedTestPingVal: St.Label | null = null;
+    private _speedTestJitterVal: St.Label | null = null;
     private _speedTestQualityVal: St.Label | null = null;
     private _speedTestRunBtnLabel: St.Label | null = null;
     private _isTestingSpeed: boolean = false;
@@ -64,12 +75,14 @@ export default class SpeedMeterExtension extends Extension {
     private _useBits: boolean = false;
     private _showUpload: boolean = true;
     private _showDownload: boolean = true;
+    private _showTopApps: boolean = true;
     private _monitoredInterface: string = '';
     private _dataQuotaGb: number = 0;
     private _quotaNotify: boolean = true;
     private _autoHideIdle: boolean = false;
     private _idleThresholdKb: number = 5;
     private _adaptivePowerSaver: boolean = true;
+    private _isOnBattery: boolean = false;
     private _notifiedQuota80: boolean = false;
     private _notifiedQuota100: boolean = false;
 
@@ -78,10 +91,11 @@ export default class SpeedMeterExtension extends Extension {
     private _lastDownText: string = '';
     private _lastUpText: string = '';
 
-    private _menuToday: PopupMenu.PopupBaseMenuItem | null = null;
-    private _menuThisMonth: PopupMenu.PopupBaseMenuItem | null = null;
-    private _menuLastMonth: PopupMenu.PopupBaseMenuItem | null = null;
-    private _menuSession: PopupMenu.PopupBaseMenuItem | null = null;
+    private _statsSectionItem: PopupMenu.PopupBaseMenuItem | null = null;
+    private _statToday: StatRowWidgets | null = null;
+    private _statThisMonth: StatRowWidgets | null = null;
+    private _statLastMonth: StatRowWidgets | null = null;
+    private _statSession: StatRowWidgets | null = null;
 
     enable(): void {
         this._prevRx = 0;
@@ -89,20 +103,26 @@ export default class SpeedMeterExtension extends Extension {
         this._sessionRx = 0;
         this._sessionTx = 0;
         this._prevTime = GLib.get_monotonic_time();
+        this._hasPrevStats = false;
+        this._isOnBattery = false;
         this._lastDownText = '';
         this._lastUpText = '';
 
         this._statsManager = new StatsManager(this.path);
         this._settings = this.getSettings();
         this._loadSettings();
+        this._checkBatteryStatus();
         
         this._settingsChangedId = this._settings.connect(
             'changed', (_, key) => {
                 this._loadSettings();
                 if (key === 'refresh-interval' || key === 'adaptive-power-saver') {
+                    this._checkBatteryStatus();
                     this._restartTimer();
                 } else if (key === 'show-download' || key === 'show-upload') {
                     this._updateVisibility();
+                } else if (key === 'show-top-apps') {
+                    this._updateActiveApp();
                 }
             },
         );
@@ -157,6 +177,10 @@ export default class SpeedMeterExtension extends Extension {
     private _buildMenu(): void {
         if (!this._indicator) return;
 
+        if ((this._indicator.menu as any).box) {
+            (this._indicator.menu as any).box.add_style_class_name('speed-meter-menu-container');
+        }
+
         // --- DASHBOARD SECTION (Grid + Graph) ---
         const dashboardBox = new St.BoxLayout({
             vertical: true,
@@ -168,25 +192,54 @@ export default class SpeedMeterExtension extends Extension {
             style_class: 'speed-meter-dashboard-header' 
         });
         
-        // Grid for Network Info
+        // 2x2 Grid for Network Info
         const infoGrid = new St.BoxLayout({ vertical: true, style_class: 'speed-meter-network-info-grid' });
         
-        const ifaceRow = this._createInfoRow('Connection');
-        const vpnRow = this._createInfoRow('VPN Status');
-        const ipRow = this._createInfoRow('Local IPv4');
-        const publicIpRow = this._createInfoRow('Public IPv4');
+        const row1 = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-network-row' });
+        const ifaceRow = this._createInfoCard('network-wired-symbolic', 'Connection');
+        const vpnRow = this._createInfoCard('network-vpn-symbolic', 'VPN Tunnel');
+        row1.add_child(ifaceRow.container);
+        row1.add_child(vpnRow.container);
+
+        const row2 = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-network-row' });
+        const ipRow = this._createInfoCard('network-transmit-receive-symbolic', 'Local IP');
+        const publicIpRow = this._createInfoCard('globe-symbolic', 'Public IP');
+        row2.add_child(ipRow.container);
+        row2.add_child(publicIpRow.container);
 
         this._ifaceValue = ifaceRow.value;
         this._vpnValue = vpnRow.value;
         this._ipValue = ipRow.value;
         this._publicIpValue = publicIpRow.value;
 
-        infoGrid.add_child(ifaceRow.container);
-        infoGrid.add_child(vpnRow.container);
-        infoGrid.add_child(ipRow.container);
-        infoGrid.add_child(publicIpRow.container);
+        infoGrid.add_child(row1);
+        infoGrid.add_child(row2);
+
+        // Active Application Pill Bar
+        const appTrackerBar = new St.BoxLayout({
+            vertical: false,
+            x_expand: true,
+            style_class: 'speed-meter-app-tracker-bar'
+        });
+        const appIcon = new St.Icon({
+            icon_name: 'application-x-executable-symbolic',
+            style_class: 'speed-meter-app-tracker-icon'
+        });
+        const appTitle = new St.Label({
+            text: 'Active App:',
+            style_class: 'speed-meter-app-tracker-title'
+        });
+        this._activeAppLabel = new St.Label({
+            text: this._activeAppName,
+            style_class: 'speed-meter-app-tracker-name',
+            x_expand: true
+        });
+        appTrackerBar.add_child(appIcon);
+        appTrackerBar.add_child(appTitle);
+        appTrackerBar.add_child(this._activeAppLabel);
 
         headerBox.add_child(infoGrid);
+        headerBox.add_child(appTrackerBar);
         dashboardBox.add_child(headerBox);
 
         // Integrated Graph with Segmented Tab Bar
@@ -202,8 +255,8 @@ export default class SpeedMeterExtension extends Extension {
             style_class: 'speed-meter-tabs-bar'
         });
 
-        const tabRealtimeBtn = this._createTabButton('utilities-system-monitor-symbolic', 'Live 60s Wave', true);
-        const tabMonthlyBtn = this._createTabButton('x-office-calendar-symbolic', 'Monthly History', false);
+        const tabRealtimeBtn = this._createTabButton('utilities-system-monitor-symbolic', 'Live Wave', true);
+        const tabMonthlyBtn = this._createTabButton('x-office-calendar-symbolic', '30-Day Peak', false);
 
         tabRealtimeBtn.connect('clicked', () => {
             if (this._activityGraph) {
@@ -238,21 +291,39 @@ export default class SpeedMeterExtension extends Extension {
         this._speedTestPanelItem = this._buildSpeedTestPanel();
         (this._indicator.menu as any).addMenuItem(this._speedTestPanelItem);
 
-        // --- STATS SECTION ---
-        this._menuToday = this._createStatItem('Today');
-        this._menuThisMonth = this._createStatItem('This Month');
-        this._menuLastMonth = this._createStatItem('Last Month');
-        this._menuSession = this._createStatItem('Session');
+        // --- STATS SECTION (Single Unified Card) ---
+        const statsBox = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            style_class: 'speed-meter-stats-card',
+        });
 
-        (this._indicator.menu as any).addMenuItem(this._menuToday);
-        (this._indicator.menu as any).addMenuItem(this._menuThisMonth);
-        (this._indicator.menu as any).addMenuItem(this._menuLastMonth);
-        (this._indicator.menu as any).addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        (this._indicator.menu as any).addMenuItem(this._menuSession);
+        const todayRow = this._createStatRow('Today', '#3584e4');
+        const thisMonthRow = this._createStatRow('This Month', '#2ec27e');
+        const lastMonthRow = this._createStatRow('Last Month', '#c061cb');
+        const sessionRow = this._createStatRow('Current Session', '#ffbe6f');
+
+        this._statToday = todayRow.widgets;
+        this._statThisMonth = thisMonthRow.widgets;
+        this._statLastMonth = lastMonthRow.widgets;
+        this._statSession = sessionRow.widgets;
+
+        statsBox.add_child(todayRow.container);
+        statsBox.add_child(this._createStatDivider());
+        statsBox.add_child(thisMonthRow.container);
+        statsBox.add_child(this._createStatDivider());
+        statsBox.add_child(lastMonthRow.container);
+        statsBox.add_child(this._createStatDivider());
+        statsBox.add_child(sessionRow.container);
+
+        this._statsSectionItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        this._statsSectionItem.add_child(statsBox);
+        (this._indicator.menu as any).addMenuItem(this._statsSectionItem);
 
         // Action Buttons Row (Reset, Speedtest, Settings)
         const actionsBox = new St.BoxLayout({
-            style_class: 'speed-meter-stat-row',
+            style_class: 'speed-meter-actions-bar',
+            vertical: false,
             x_expand: true,
         });
 
@@ -278,7 +349,7 @@ export default class SpeedMeterExtension extends Extension {
 
         const { button: settingsBtn } = this._createButtonWithIcon('preferences-system-symbolic', 'Settings', 'speed-meter-button');
         settingsBtn.connect('clicked', () => {
-            (this as any).openPreferences();
+            this.openPreferences();
         });
 
         actionsBox.add_child(resetBtn);
@@ -298,18 +369,21 @@ export default class SpeedMeterExtension extends Extension {
     }
 
     private _setStatsVisible(visible: boolean): void {
-        if (this._menuToday) (this._menuToday as any).visible = visible;
-        if (this._menuThisMonth) (this._menuThisMonth as any).visible = visible;
-        if (this._menuLastMonth) (this._menuLastMonth as any).visible = visible;
-        if (this._menuSession) (this._menuSession as any).visible = visible;
+        if (this._statsSectionItem) (this._statsSectionItem as any).visible = visible;
     }
 
-    private _createInfoRow(labelText: string): { container: St.BoxLayout, value: St.Label } {
-        const container = new St.BoxLayout({ style_class: 'speed-meter-info-item', vertical: false, x_expand: true });
-        const label = new St.Label({ text: labelText, style_class: 'speed-meter-info-label', x_expand: true });
+    private _createInfoCard(iconName: string, labelText: string): { container: St.BoxLayout, value: St.Label } {
+        const container = new St.BoxLayout({ style_class: 'speed-meter-info-card', vertical: true, x_expand: true });
+        
+        const topRow = new St.BoxLayout({ style_class: 'speed-meter-info-badge-row', vertical: false });
+        const icon = new St.Icon({ icon_name: iconName, style_class: 'speed-meter-info-icon' });
+        const label = new St.Label({ text: labelText, style_class: 'speed-meter-info-label' });
+        topRow.add_child(icon);
+        topRow.add_child(label);
+
         const value = new St.Label({ text: '...', style_class: 'speed-meter-info-value' });
         
-        container.add_child(label);
+        container.add_child(topRow);
         container.add_child(value);
         
         return { container, value };
@@ -364,28 +438,69 @@ export default class SpeedMeterExtension extends Extension {
         });
     }
 
-    private _createStatItem(label: string): PopupMenu.PopupBaseMenuItem {
-        const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-card' });
-        const mainBox = new St.BoxLayout({ vertical: true, x_expand: true });
-        
-        const textBox = new St.BoxLayout({ vertical: true, x_expand: true });
-        const titleLabel = new St.Label({ text: label, style_class: 'speed-meter-stat-label' });
-        const valueLabel = new St.Label({ text: '0 B', style_class: 'speed-meter-stat-value' });
-        const subLabel = new St.Label({ text: '(↓ 0 B  ↑ 0 B)', style_class: 'speed-meter-stat-sub' });
+    private _createStatDivider(): St.Widget {
+        return new St.Widget({
+            style_class: 'speed-meter-stat-divider',
+            x_expand: true,
+        });
+    }
 
-        textBox.add_child(titleLabel);
-        textBox.add_child(valueLabel);
-        textBox.add_child(subLabel);
-        
-        mainBox.add_child(textBox);
-        
-        item.add_child(mainBox);
-        (item as any)._valueLabel = valueLabel;
-        (item as any)._subLabel = subLabel;
-        (item as any)._lastTotal = '';
-        (item as any)._lastSub = '';
-        
-        return item;
+    private _createStatRow(label: string, dotColor: string = '#3584e4'): { container: St.BoxLayout, widgets: StatRowWidgets } {
+        const container = new St.BoxLayout({
+            vertical: false,
+            x_expand: true,
+            style_class: 'speed-meter-stat-row',
+        });
+
+        const leftBox = new St.BoxLayout({
+            vertical: false,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-stat-left',
+        });
+        const dot = new St.Widget({
+            style_class: 'speed-meter-stat-bullet',
+            style: `background-color: ${dotColor};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const titleLabel = new St.Label({
+            text: label,
+            style_class: 'speed-meter-stat-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        leftBox.add_child(dot);
+        leftBox.add_child(titleLabel);
+
+        const rightBox = new St.BoxLayout({
+            vertical: true,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-stat-right',
+        });
+        const valueLabel = new St.Label({
+            text: '0 B',
+            style_class: 'speed-meter-stat-value',
+            x_align: Clutter.ActorAlign.END,
+        });
+        const subLabel = new St.Label({
+            text: '(\u2193 0 B  \u2191 0 B)',
+            style_class: 'speed-meter-stat-sub',
+            x_align: Clutter.ActorAlign.END,
+        });
+        rightBox.add_child(valueLabel);
+        rightBox.add_child(subLabel);
+
+        container.add_child(leftBox);
+        container.add_child(rightBox);
+
+        const widgets: StatRowWidgets = {
+            valueLabel,
+            subLabel,
+            lastTotal: '',
+            lastSub: '',
+        };
+
+        return { container, widgets };
     }
 
     private _updateMenu(): void {
@@ -395,10 +510,10 @@ export default class SpeedMeterExtension extends Extension {
         const thisMonth = this._statsManager.getThisMonth();
         const lastMonth = this._statsManager.getLastMonth();
 
-        this._updateStatItem(this._menuToday, today.rx, today.tx);
-        this._updateStatItem(this._menuThisMonth, thisMonth.rx, thisMonth.tx);
-        this._updateStatItem(this._menuLastMonth, lastMonth.rx, lastMonth.tx);
-        this._updateStatItem(this._menuSession, this._sessionRx, this._sessionTx);
+        this._updateStatRow(this._statToday, today.rx, today.tx);
+        this._updateStatRow(this._statThisMonth, thisMonth.rx, thisMonth.tx);
+        this._updateStatRow(this._statLastMonth, lastMonth.rx, lastMonth.tx);
+        this._updateStatRow(this._statSession, this._sessionRx, this._sessionTx);
         
         if (this._activityGraph) {
             this._activityGraph.updateFromStats(this._statsManager);
@@ -479,7 +594,7 @@ export default class SpeedMeterExtension extends Extension {
 
         // 4. Async Public IP
         if (this._publicIpValue) this._publicIpValue.set_text('Fetching...');
-        const publicIpCmd = 'bash -c "curl -s --max-time 3 https://api.ipify.org || wget -qO- --timeout=3 https://icanhazip.com || echo Unavailable"';
+        const publicIpCmd = 'curl -s --max-time 3 https://api.ipify.org || wget -qO- --timeout=3 https://icanhazip.com || echo Unavailable';
         this._spawnAsync(publicIpCmd, (stdout) => {
             if (stdout && stdout.trim() !== 'Unavailable' && this._publicIpValue) {
                 this._publicIpValue.set_text(stdout.trim());
@@ -489,17 +604,29 @@ export default class SpeedMeterExtension extends Extension {
         });
 
         // 5. Update Active Application tracking
-        this._updateTopApps();
+        this._updateActiveApp();
     }
 
-    private _updateTopApps(): void {
-        const cmd = `bash -c 'ps -eo comm,pid --sort=-%cpu | grep -vE "(ps|grep|systemd|gnome-shell|bash|sshd|kworker|dbus|pipewire)" | head -n 1 | awk "{print \\$1}"'`;
-        this._spawnAsync(cmd, (stdout) => {
-            const app = stdout.trim();
+    private _updateActiveApp(): void {
+        if (!this._showTopApps) {
+            this._activeAppName = '';
+            if (this._activeAppLabel) this._activeAppLabel.set_text('Disabled');
+            return;
+        }
+        try {
+            const tracker = Shell.WindowTracker.get_default();
+            const app = tracker.focus_app;
             if (app) {
-                this._activeAppName = app.charAt(0).toUpperCase() + app.slice(1);
+                const name = app.get_name();
+                if (name) {
+                    this._activeAppName = name;
+                    if (this._activeAppLabel) this._activeAppLabel.set_text(name);
+                    return;
+                }
             }
-        });
+        } catch (e) {}
+        this._activeAppName = 'System';
+        if (this._activeAppLabel) this._activeAppLabel.set_text('System');
     }
 
     private _buildSpeedTestPanel(): PopupMenu.PopupBaseMenuItem {
@@ -520,7 +647,7 @@ export default class SpeedMeterExtension extends Extension {
         });
         closeBtn.connect('clicked', () => {
             if (this._speedTestPanelItem) {
-                (this._speedTestPanelItem as any).visible = false;
+                this._speedTestPanelItem.visible = false;
                 this._setStatsVisible(true);
             }
         });
@@ -535,7 +662,7 @@ export default class SpeedMeterExtension extends Extension {
         const lossBox = this._createOoklaPingMetric('LOSS', '0%');
 
         this._speedTestPingVal = pingBox.valueLabel;
-        (this as any)._speedTestJitterVal = jitterBox.valueLabel;
+        this._speedTestJitterVal = jitterBox.valueLabel;
 
         pingStrip.add_child(pingBox.container);
         pingStrip.add_child(jitterBox.container);
@@ -604,6 +731,16 @@ export default class SpeedMeterExtension extends Extension {
         return { container, valueLabel };
     }
 
+    private _notify(msg: string, details?: string): void {
+        try {
+            if (typeof Main.notify === 'function') {
+                Main.notify(msg, details);
+            }
+        } catch (e) {
+            logError(e as Error, 'SpeedMeter: Notification error');
+        }
+    }
+
     private _runFullSpeedTest(): void {
         if (this._isTestingSpeed) return;
         this._isTestingSpeed = true;
@@ -615,63 +752,72 @@ export default class SpeedMeterExtension extends Extension {
         if (this._speedTestUpVal) this._speedTestUpVal.set_text('--');
 
         // Step 1: Ping Test
-        const pingCmd = `bash -c 'ping -c 4 -w 3 1.1.1.1 2>/dev/null | awk -F"/" "END {print \\$5 \\"|\\" \\$6}"'`;
+        const pingCmd = `ping -c 4 -w 3 1.1.1.1 2>/dev/null | awk -F"/" 'END {print $5 "|" $6}'`;
         this._spawnAsync(pingCmd, (stdout) => {
             const parts = stdout.trim().split('|');
-            const avgPing = parts[0] && !isNaN(parseFloat(parts[0])) ? `${parseFloat(parts[0]).toFixed(0)} ms` : '14 ms';
-            const mdevPing = parts[1] && !isNaN(parseFloat(parts[1])) ? `${parseFloat(parts[1]).toFixed(1)} ms` : '1.2 ms';
+            const avgPing = parts[0] && !isNaN(parseFloat(parts[0])) ? `${parseFloat(parts[0]).toFixed(0)} ms` : 'N/A';
+            const mdevPing = parts[1] && !isNaN(parseFloat(parts[1])) ? `${parseFloat(parts[1]).toFixed(1)} ms` : 'N/A';
 
             if (this._speedTestPingVal) this._speedTestPingVal.set_text(avgPing);
-            if ((this as any)._speedTestJitterVal) (this as any)._speedTestJitterVal.set_text(mdevPing);
+            if (this._speedTestJitterVal) this._speedTestJitterVal.set_text(mdevPing);
 
             // Step 2: Download Speed Test
             if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING DOWNLOAD SPEED...');
 
-            const downCmd = `bash -c '
+            const downCmd = `
                 START=$(date +%s%N);
                 BYTES=$(curl -s -w "%{size_download}" -o /dev/null --max-time 6 "https://speed.cloudflare.com/__down?bytes=25000000" || echo 0);
                 END=$(date +%s%N);
                 MS=$(( (END - START) / 1000000 ));
-                python3 -c "print(round(($BYTES * 8 / 1000000) / ($MS / 1000), 1))" 2>/dev/null || echo "84.2"
-            '`;
+                if [ "$MS" -gt 0 ] && [ "$BYTES" -gt 0 ]; then
+                    python3 -c "print(round(($BYTES * 8 / 1000000) / ($MS / 1000), 1))" 2>/dev/null || echo "0.0";
+                else
+                    echo "0.0";
+                fi
+            `;
 
             this._spawnAsync(downCmd, (downOut) => {
-                const downMbps = downOut.trim() || '84.2';
+                const downMbps = downOut.trim() || '0.0';
                 if (this._speedTestDownVal) {
-                    this._speedTestDownVal.set_text(downMbps);
+                    this._speedTestDownVal.set_text(downMbps === '0.0' ? '--' : downMbps);
                 }
 
-                // Step 3: Upload Speed Test
+                // Step 3: Upload Speed Test (Uses zero stream instead of private local hardware info)
                 if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING UPLOAD SPEED...');
 
-                const upCmd = `bash -c '
+                const upCmd = `
                     START=$(date +%s%N);
-                    BYTES=$(curl -s -w "%{size_upload}" -o /dev/null --max-time 5 -X POST --data-binary @/proc/cpuinfo "https://speed.cloudflare.com/__up" || echo 0);
+                    BYTES=$(head -c 5000000 /dev/zero | curl -s -w "%{size_upload}" -o /dev/null --max-time 5 -X POST --data-binary @- "https://speed.cloudflare.com/__up" || echo 0);
                     END=$(date +%s%N);
                     MS=$(( (END - START) / 1000000 ));
-                    python3 -c "print(round(($BYTES * 8 / 1000000) / ($MS / 1000), 1))" 2>/dev/null || echo "32.6"
-                '`;
+                    if [ "$MS" -gt 0 ] && [ "$BYTES" -gt 0 ]; then
+                        python3 -c "print(round(($BYTES * 8 / 1000000) / ($MS / 1000), 1))" 2>/dev/null || echo "0.0";
+                    else
+                        echo "0.0";
+                    fi
+                `;
 
                 this._spawnAsync(upCmd, (upOut) => {
                     this._isTestingSpeed = false;
                     if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('AGAIN');
 
-                    const upMbps = upOut.trim() || '32.6';
+                    const upMbps = upOut.trim() || '0.0';
                     if (this._speedTestUpVal) {
-                        this._speedTestUpVal.set_text(upMbps);
+                        this._speedTestUpVal.set_text(upMbps === '0.0' ? '--' : upMbps);
                     }
 
                     // Calculate Rating
-                    const dVal = parseFloat(downMbps) || 50;
+                    const dVal = parseFloat(downMbps) || 0;
                     let rating = 'TEST COMPLETE — OPTIMAL FOR 4K STREAMING';
-                    if (dVal < 15) rating = 'TEST COMPLETE — BASIC BROADBAND';
+                    if (dVal <= 0) rating = 'TEST FAILED — CHECK CONNECTION';
+                    else if (dVal < 15) rating = 'TEST COMPLETE — BASIC BROADBAND';
                     else if (dVal < 40) rating = 'TEST COMPLETE — FAST HIGH-SPEED';
 
                     if (this._speedTestQualityVal) {
                         this._speedTestQualityVal.set_text(rating);
                     }
 
-                    Main.notify('Speedtest Complete', `Results:\nDownload: ${downMbps} Mbps | Upload: ${upMbps} Mbps | Ping: ${avgPing}`);
+                    this._notify('Speedtest Complete', `Results:\nDownload: ${downMbps} Mbps | Upload: ${upMbps} Mbps | Ping: ${avgPing}`);
                 });
             });
         });
@@ -693,19 +839,19 @@ export default class SpeedMeterExtension extends Extension {
         } catch (e) {}
     }
 
-    private _updateStatItem(item: PopupMenu.PopupBaseMenuItem | null, rx: number, tx: number): void {
-        if (!item) return;
+    private _updateStatRow(stat: StatRowWidgets | null, rx: number, tx: number): void {
+        if (!stat) return;
         const totalStr = this._fmtSize(rx + tx);
         const subStr = `(\u2193 ${this._fmtSize(rx)}  \u2191 ${this._fmtSize(tx)})`;
         
         // Change Guard: Only update if strings differ to save CPU/Layout work
-        if ((item as any)._lastTotal !== totalStr) {
-            (item as any)._valueLabel.set_text(totalStr);
-            (item as any)._lastTotal = totalStr;
+        if (stat.lastTotal !== totalStr) {
+            stat.valueLabel.set_text(totalStr);
+            stat.lastTotal = totalStr;
         }
-        if ((item as any)._lastSub !== subStr) {
-            (item as any)._subLabel.set_text(subStr);
-            (item as any)._lastSub = subStr;
+        if (stat.lastSub !== subStr) {
+            stat.subLabel.set_text(subStr);
+            stat.lastSub = subStr;
         }
     }
 
@@ -714,6 +860,39 @@ export default class SpeedMeterExtension extends Extension {
         if (bytes >= MB) return `${(bytes / MB).toFixed(2)} MB`;
         if (bytes >= KB) return `${(bytes / KB).toFixed(1)} KB`;
         return `${Math.round(bytes)} B`;
+    }
+
+    private _checkBatteryStatus(): void {
+        if (!this._adaptivePowerSaver) {
+            this._isOnBattery = false;
+            return;
+        }
+        try {
+            Gio.DBus.system.call(
+                'org.freedesktop.UPower',
+                '/org/freedesktop/UPower',
+                'org.freedesktop.DBus.Properties',
+                'Get',
+                new GLib.Variant('(ss)', ['org.freedesktop.UPower', 'OnBattery']),
+                null,
+                Gio.DBusCallFlags.NONE,
+                1000,
+                null,
+                (conn, res) => {
+                    try {
+                        const reply = conn?.call_finish(res);
+                        if (reply) {
+                            const [unpacked] = reply.recursiveUnpack() as any;
+                            const onBattery = (unpacked?.get_boolean ? unpacked.get_boolean() : unpacked) === true;
+                            if (this._isOnBattery !== onBattery) {
+                                this._isOnBattery = onBattery;
+                                this._restartTimer();
+                            }
+                        }
+                    } catch (e) {}
+                }
+            );
+        } catch (e) {}
     }
 
     private _restartTimer(): void {
@@ -725,27 +904,8 @@ export default class SpeedMeterExtension extends Extension {
         let interval = this._settings?.get_int('refresh-interval') ?? 1500;
 
         // Adaptive Power Saver: Reduce polling frequency to 3000ms when running on Battery
-        if (this._adaptivePowerSaver) {
-            try {
-                const bus = Gio.DBus.system;
-                const reply = bus.call_sync(
-                    'org.freedesktop.UPower',
-                    '/org/freedesktop/UPower',
-                    'org.freedesktop.DBus.Properties',
-                    'Get',
-                    new GLib.Variant('(ss)', ['org.freedesktop.UPower', 'OnBattery']),
-                    null,
-                    Gio.DBusCallFlags.NONE,
-                    -1,
-                    null
-                );
-                if (reply) {
-                    const [val] = reply.recursiveUnpack() as any;
-                    if (val === true) {
-                        interval = Math.max(3000, interval);
-                    }
-                }
-            } catch (e) {}
+        if (this._adaptivePowerSaver && this._isOnBattery) {
+            interval = Math.max(3000, interval);
         }
 
         this._timeoutId = GLib.timeout_add(
@@ -761,6 +921,7 @@ export default class SpeedMeterExtension extends Extension {
         this._useBits = this._settings.get_boolean('use-bits');
         this._showUpload = this._settings.get_boolean('show-upload');
         this._showDownload = this._settings.get_boolean('show-download');
+        this._showTopApps = this._settings.get_boolean('show-top-apps');
         this._monitoredInterface = this._settings.get_string('monitored-interface').trim();
         this._dataQuotaGb = this._settings.get_int('data-quota-gb');
         this._quotaNotify = this._settings.get_boolean('quota-notify');
@@ -852,71 +1013,78 @@ export default class SpeedMeterExtension extends Extension {
                     this._prevRx = rx;
                     this._prevTx = tx;
                     this._prevTime = now;
+                    this._hasPrevStats = true;
                     return;
                 }
 
-                if (this._prevRx > 0 && this._prevTx > 0) {
-                    let deltaRx = rx - this._prevRx;
-                    let deltaTx = tx - this._prevTx;
+                if (!this._hasPrevStats) {
+                    this._prevRx = rx;
+                    this._prevTx = tx;
+                    this._prevTime = now;
+                    this._hasPrevStats = true;
+                    return;
+                }
 
-                    // Counter reset / rollover guard
-                    if (deltaRx < 0) deltaRx = 0;
-                    if (deltaTx < 0) deltaTx = 0;
+                let deltaRx = rx - this._prevRx;
+                let deltaTx = tx - this._prevTx;
 
-                    this._sessionRx += deltaRx;
-                    this._sessionTx += deltaTx;
-                    this._statsManager?.update(deltaRx, deltaTx);
+                // Counter reset / rollover guard
+                if (deltaRx < 0) deltaRx = 0;
+                if (deltaTx < 0) deltaTx = 0;
 
-                    if (deltaRx + deltaTx > 0) {
-                        this._statsManager?.updateAppUsage(this._activeAppName, deltaRx + deltaTx);
+                this._sessionRx += deltaRx;
+                this._sessionTx += deltaTx;
+                this._statsManager?.update(deltaRx, deltaTx);
+
+                if (this._showTopApps && this._activeAppName && (deltaRx + deltaTx > 0)) {
+                    this._statsManager?.updateAppUsage(this._activeAppName, deltaRx + deltaTx);
+                }
+                
+                const rxs = deltaRx / dt;
+                const txs = deltaTx / dt;
+
+                // Push live sample to 60-second Bezier wave graph
+                if (this._activityGraph) {
+                    this._activityGraph.pushRealtimeSample(rxs, txs);
+                }
+
+                // Auto-hide when network speed is below idle threshold
+                const totalKbps = (rxs + txs) / KB;
+                const isIdle = this._autoHideIdle && totalKbps < this._idleThresholdKb;
+                if (this._box) {
+                    this._box.visible = !isIdle;
+                }
+                if (this._indicator) {
+                    this._indicator.visible = !isIdle;
+                }
+
+                // Monthly Data Quota Warning Check
+                this._checkQuota();
+
+                if (this._indicator && (this._indicator.menu as any).isOpen) {
+                    this._updateMenu();
+                }
+
+                const downLabel = this._downLabel;
+                const upLabel = this._upLabel;
+                if (!downLabel || !upLabel) return;
+
+                const downText = this._showDownload ? `${this._fmt(rxs)} \u2193` : '';
+                const upText = this._showUpload ? `${this._fmt(txs)} \u2191` : '';
+
+                if (!this._showDownload && !this._showUpload) {
+                    if (this._lastDownText !== '\u2026') {
+                        downLabel.set_text('\u2026');
+                        this._lastDownText = '\u2026';
                     }
-                    
-                    const rxs = deltaRx / dt;
-                    const txs = deltaTx / dt;
-
-                    // Push live sample to 60-second Bezier wave graph
-                    if (this._activityGraph) {
-                        this._activityGraph.pushRealtimeSample(rxs, txs);
+                } else {
+                    if (this._showDownload && this._lastDownText !== downText) {
+                        downLabel.set_text(downText);
+                        this._lastDownText = downText;
                     }
-
-                    // Auto-hide when network speed is below idle threshold
-                    if (this._box) {
-                        const totalKbps = (rxs + txs) / KB;
-                        if (this._autoHideIdle && totalKbps < this._idleThresholdKb) {
-                            this._box.visible = false;
-                        } else {
-                            this._box.visible = true;
-                        }
-                    }
-
-                    // Monthly Data Quota Warning Check
-                    this._checkQuota();
-
-                    if (this._indicator && (this._indicator.menu as any).isOpen) {
-                        this._updateMenu();
-                    }
-
-                    const downLabel = this._downLabel;
-                    const upLabel = this._upLabel;
-                    if (!downLabel || !upLabel) return;
-
-                    const downText = this._showDownload ? `${this._fmt(rxs)} \u2193` : '';
-                    const upText = this._showUpload ? `${this._fmt(txs)} \u2191` : '';
-
-                    if (!this._showDownload && !this._showUpload) {
-                        if (this._lastDownText !== '\u2026') {
-                            downLabel.set_text('\u2026');
-                            this._lastDownText = '\u2026';
-                        }
-                    } else {
-                        if (this._showDownload && this._lastDownText !== downText) {
-                            downLabel.set_text(downText);
-                            this._lastDownText = downText;
-                        }
-                        if (this._showUpload && this._lastUpText !== upText) {
-                            upLabel.set_text(upText);
-                            this._lastUpText = upText;
-                        }
+                    if (this._showUpload && this._lastUpText !== upText) {
+                        upLabel.set_text(upText);
+                        this._lastUpText = upText;
                     }
                 }
 
@@ -936,13 +1104,13 @@ export default class SpeedMeterExtension extends Extension {
 
         if (ratio >= 1.0 && !this._notifiedQuota100) {
             if (this._quotaNotify) {
-                Main.notify('Internet Speed Meter', `Alert: Monthly data quota of ${this._dataQuotaGb} GB reached!`);
+                this._notify('Internet Speed Meter', `Alert: Monthly data quota of ${this._dataQuotaGb} GB reached!`);
             }
             this._notifiedQuota100 = true;
             this._notifiedQuota80 = true;
         } else if (ratio >= 0.8 && !this._notifiedQuota80) {
             if (this._quotaNotify) {
-                Main.notify('Internet Speed Meter', `Warning: 80% of monthly data quota (${this._dataQuotaGb} GB) used.`);
+                this._notify('Internet Speed Meter', `Warning: 80% of monthly data quota (${this._dataQuotaGb} GB) used.`);
             }
             this._notifiedQuota80 = true;
         }
@@ -979,55 +1147,78 @@ export default class SpeedMeterExtension extends Extension {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = 0;
         }
-        this._statsManager?.save();
+        this._statsManager?.saveSync();
+
+        this._activityGraph?.destroy();
+        this._activityGraph = null;
+
+        this._speedTestPanelItem?.destroy();
+        this._speedTestPanelItem = null;
+
+        this._statsSectionItem?.destroy();
+        this._statsSectionItem = null;
+
+        this._activeAppLabel?.destroy();
+        this._activeAppLabel = null;
+
+        this._ifaceValue?.destroy();
+        this._ifaceValue = null;
+
+        this._vpnValue?.destroy();
+        this._vpnValue = null;
+
+        this._ipValue?.destroy();
+        this._ipValue = null;
+
+        this._publicIpValue?.destroy();
+        this._publicIpValue = null;
+
+        this._speedTestDownVal?.destroy();
+        this._speedTestDownVal = null;
+
+        this._speedTestUpVal?.destroy();
+        this._speedTestUpVal = null;
+
+        this._speedTestPingVal?.destroy();
+        this._speedTestPingVal = null;
+
+        this._speedTestQualityVal?.destroy();
+        this._speedTestQualityVal = null;
+
+        this._speedTestRunBtnLabel?.destroy();
+        this._speedTestRunBtnLabel = null;
+
+        this._speedTestJitterVal?.destroy();
+        this._speedTestJitterVal = null;
+
+        this._downLabel?.destroy();
+        this._downLabel = null;
+
+        this._sepLabel?.destroy();
+        this._sepLabel = null;
+
+        this._upLabel?.destroy();
+        this._upLabel = null;
+
+        this._box?.destroy();
+        this._box = null;
 
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
         }
 
-        // Parent indicator destruction recursively destroys all child St/PopupMenu actors.
-        // Nullify all references cleanly without redundant .destroy() calls.
-
-        this._box?.destroy();
-        this._box = null;
-        this._downLabel?.destroy();
-        this._downLabel = null;
-        this._sepLabel?.destroy();
-        this._sepLabel = null;
-        this._upLabel?.destroy();
-        this._upLabel = null;
-        this._activityGraph?.destroy();
-        this._activityGraph = null;
-        this._menuToday = null;
-        this._menuThisMonth = null;
-        this._menuLastMonth = null;
-        this._menuSession = null;
-        this._ifaceValue?.destroy();
-        this._ifaceValue = null;
-        this._vpnValue?.destroy();
-        this._vpnValue = null;
-        this._ipValue?.destroy();
-        this._ipValue = null;
-        this._publicIpValue?.destroy();
-        this._publicIpValue = null;
-        this._speedTestPanelItem?.destroy();
-        this._speedTestPanelItem = null;
-        this._speedTestDownVal?.destroy();
-        this._speedTestDownVal = null;
-        this._speedTestUpVal?.destroy();
-        this._speedTestUpVal = null;
-        this._speedTestPingVal?.destroy();
-        this._speedTestPingVal = null;
-        this._speedTestQualityVal?.destroy();
-        this._speedTestQualityVal = null;
-        this._speedTestRunBtnLabel?.destroy();
-        this._speedTestRunBtnLabel = null;
+        this._statToday = null;
+        this._statThisMonth = null;
+        this._statLastMonth = null;
+        this._statSession = null;
 
         this._procFile = null;
         this._settings = null;
         this._statsManager = null;
         this._lastDownText = '';
         this._lastUpText = '';
+        this._hasPrevStats = false;
+        this._isOnBattery = false;
     }
 }

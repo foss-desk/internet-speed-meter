@@ -11,10 +11,14 @@ import '@girs/gnome-shell/ambient';
 
 declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
     export class PopupMenu extends GObject.Object {
+        isOpen: boolean;
         addMenuItem(item: any, position?: number): void;
         removeAll(): void;
+        connect(signal: string, callback: (...args: any[]) => any): number;
+        disconnect(id: number): void;
     }
     export class PopupBaseMenuItem extends GObject.Object {
+        visible: boolean;
         constructor(params?: any);
         add_child(actor: any): void;
         destroy(): void;
@@ -33,14 +37,6 @@ declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
 }
 
 
-declare module 'resource:///org/gnome/shell/extensions/extension.js' {
-    export class Extension {
-        uuid: string;
-        metadata: { name: string; [key: string]: any };
-        path: string;
-        getSettings(): import('@girs/gio-2.0').default.Settings;
-    }
-}
 
 declare global {
     /** SpiderMonkey's built-in TextDecoder (WHATWG Encoding Standard) */

@@ -91,7 +91,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         const newDailyData: number[] = [];
         let peak = 1024 * 1024 * 10; // 10 MB floor
 
-        const dailyHistory = (stats as any)._history.daily;
+        const dailyHistory = stats.getDailyData();
 
         for (let d = 1; d <= daysInMonth; d++) {
             const dayKey = `${yearMonth}-${String(d).padStart(2, '0')}`;
@@ -132,14 +132,14 @@ class ActivityGraphImpl extends St.DrawingArea {
         const maxTx = Math.max(...this._txBuffer, 1024 * 10);
         const peakSpeed = Math.max(maxRx, maxTx);
 
-        const graphH = h - 22;
+        const graphH = h - 24;
         const bottomY = h - 12;
         const count = this._rxBuffer.length;
         const stepX = w / (count - 1);
 
-        // Grid lines
-        cr.setSourceRGBA(1, 1, 1, 0.06);
-        cr.setLineWidth(0.8);
+        // Subtle background grid
+        cr.setSourceRGBA(1, 1, 1, 0.05);
+        cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
             const y = (graphH / 3) * i;
             cr.moveTo(0, y);
@@ -147,35 +147,39 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.stroke();
         }
 
-        // Draw RX Curve (Download - Cyan/Blue)
-        this._drawBezierWave(cr, this._rxBuffer, peakSpeed, stepX, bottomY, graphH, [0.21, 0.52, 0.89]);
+        // Draw RX Curve (Download - Electric Cyan: 0.0, 0.82, 1.0)
+        this._drawBezierWave(cr, this._rxBuffer, peakSpeed, stepX, bottomY, graphH, [0.0, 0.82, 1.0]);
 
-        // Draw TX Curve (Upload - Orange/Red)
-        this._drawBezierWave(cr, this._txBuffer, peakSpeed, stepX, bottomY, graphH, [0.96, 0.38, 0.32]);
+        // Draw TX Curve (Upload - Coral Magenta: 0.97, 0.34, 0.99)
+        this._drawBezierWave(cr, this._txBuffer, peakSpeed, stepX, bottomY, graphH, [0.97, 0.34, 0.99]);
 
-        // Top Header Info
+        // Top Header Info with neon bullets
         const currentRx = this._rxBuffer[count - 1];
         const currentTx = this._txBuffer[count - 1];
 
-        cr.setSourceRGBA(0.21, 0.52, 0.89, 0.9);
+        // Download pill
+        cr.setSourceRGBA(0.0, 0.82, 1.0, 0.95);
         cr.setFontSize(9.5);
-        cr.moveTo(6, 13);
+        cr.moveTo(8, 14);
         cr.showText(`\u2193 ${this._fmtSpeed(currentRx)}`);
 
-        cr.setSourceRGBA(0.96, 0.38, 0.32, 0.9);
-        cr.moveTo(90, 13);
+        // Upload pill
+        cr.setSourceRGBA(0.97, 0.34, 0.99, 0.95);
+        cr.moveTo(105, 14);
         cr.showText(`\u2191 ${this._fmtSpeed(currentTx)}`);
 
-        cr.setSourceRGBA(1, 1, 1, 0.4);
-        cr.moveTo(w - 110, 13);
+        // Peak Badge
+        cr.setSourceRGBA(1, 1, 1, 0.45);
+        cr.setFontSize(8.5);
+        cr.moveTo(w - 105, 14);
         cr.showText(`Peak: ${this._fmtSpeed(peakSpeed)}`);
 
-        // Bottom axis label
-        cr.setSourceRGBA(1, 1, 1, 0.35);
-        cr.setFontSize(8.5);
-        cr.moveTo(4, h - 2);
+        // Bottom axis labels
+        cr.setSourceRGBA(1, 1, 1, 0.3);
+        cr.setFontSize(8);
+        cr.moveTo(6, h - 2);
         cr.showText("-60s");
-        cr.moveTo(w - 20, h - 2);
+        cr.moveTo(w - 24, h - 2);
         cr.showText("now");
     }
 
@@ -199,7 +203,7 @@ class ActivityGraphImpl extends St.DrawingArea {
             points.push({ x, y });
         }
 
-        // Fill path under wave
+        // Fill path under wave with smooth gradient
         cr.moveTo(0, bottomY);
         cr.lineTo(points[0].x, points[0].y);
 
@@ -217,8 +221,9 @@ class ActivityGraphImpl extends St.DrawingArea {
         cr.closePath();
 
         const grad = new (Cairo as any).LinearGradient(0, 0, 0, bottomY);
-        grad.addColorStopRGBA(0, rgb[0], rgb[1], rgb[2], 0.35);
-        grad.addColorStopRGBA(1, rgb[0], rgb[1], rgb[2], 0.02);
+        grad.addColorStopRGBA(0, rgb[0], rgb[1], rgb[2], 0.38);
+        grad.addColorStopRGBA(0.8, rgb[0], rgb[1], rgb[2], 0.08);
+        grad.addColorStopRGBA(1, rgb[0], rgb[1], rgb[2], 0.0);
         cr.setSource(grad);
         cr.fill();
 
@@ -234,8 +239,8 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.curveTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
         }
 
-        cr.setSourceRGBA(rgb[0], rgb[1], rgb[2], 0.95);
-        cr.setLineWidth(1.6);
+        cr.setSourceRGBA(rgb[0], rgb[1], rgb[2], 1.0);
+        cr.setLineWidth(1.8);
         cr.stroke();
     }
 
@@ -245,13 +250,14 @@ class ActivityGraphImpl extends St.DrawingArea {
         const numDays = this._dailyData.length;
         const barSpacing = 3;
         const barWidth = Math.max(2, (w / numDays) - barSpacing);
-        const maxBarHeight = h - 25;
+        const maxBarHeight = h - 26;
         const bottomY = h - 12;
 
-        cr.setSourceRGBA(1, 1, 1, 0.08);
-        cr.setLineWidth(0.8);
-        for (let i = 1; i <= 4; i++) {
-            const y = (maxBarHeight / 4) * i;
+        // Subtle horizontal guide lines
+        cr.setSourceRGBA(1, 1, 1, 0.05);
+        cr.setLineWidth(0.75);
+        for (let i = 1; i <= 3; i++) {
+            const y = (maxBarHeight / 3) * i;
             cr.moveTo(0, y);
             cr.lineTo(w, y);
             cr.stroke();
@@ -261,26 +267,31 @@ class ActivityGraphImpl extends St.DrawingArea {
             const val = this._dailyData[i];
             if (val === 0 && (i + 1) !== this._lastUpdateDay) continue;
 
-            const barH = Math.max(1, (val / this._peakValue) * maxBarHeight);
+            const barH = Math.max(2, (val / this._peakValue) * maxBarHeight);
             const x = i * (barWidth + barSpacing);
             const y = bottomY - barH;
 
             if ((i + 1) === this._lastUpdateDay) {
+                // Today's bar glowing cyan-blue
                 const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
-                grad.addColorStopRGBA(0, 0.21, 0.52, 0.89, 1);
-                grad.addColorStopRGBA(1, 0.21, 0.52, 0.89, 0.4);
+                grad.addColorStopRGBA(0, 0.0, 0.82, 1.0, 1.0);
+                grad.addColorStopRGBA(1, 0.21, 0.52, 0.89, 0.5);
                 cr.setSource(grad);
             } else {
-                cr.setSourceRGBA(1, 1, 1, 0.2);
+                // Past days subtle frosted glass bar
+                const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
+                grad.addColorStopRGBA(0, 1, 1, 1, 0.35);
+                grad.addColorStopRGBA(1, 1, 1, 0.12);
+                cr.setSource(grad);
             }
 
             cr.rectangle(x, y, barWidth, barH);
             cr.fill();
         }
 
-        cr.setSourceRGBA(1, 1, 1, 0.7);
-        cr.setFontSize(10);
-        cr.moveTo(5, 14);
+        cr.setSourceRGBA(1, 1, 1, 0.8);
+        cr.setFontSize(9.5);
+        cr.moveTo(8, 14);
         cr.showText(`Monthly Peak: ${this._fmt(this._peakValue)}`);
 
         cr.setSourceRGBA(1, 1, 1, 0.4);
