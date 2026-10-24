@@ -17,6 +17,7 @@ class ActivityGraphImpl extends St.DrawingArea {
     private _dailyData: number[] = [];
     private _peakValue: number = 0;
     private _lastUpdateDay: number = -1;
+    private _lightMode: boolean = false;
 
     // Real-time 60-second rolling sample buffer
     private _rxBuffer: number[] = new Array(60).fill(0);
@@ -57,6 +58,19 @@ class ActivityGraphImpl extends St.DrawingArea {
     toggleMode(): void {
         this._mode = this._mode === 'realtime' ? 'monthly' : 'realtime';
         this.queue_repaint();
+    }
+
+    /**
+     * The graph's backdrop (.speed-meter-graph-container) switches between a
+     * dark and a light background via CSS depending on the shell theme; the
+     * Cairo-drawn grid lines/labels/ghost-bars below are painted directly
+     * (not themeable via CSS) so they need the same light/dark switch here.
+     */
+    setLightMode(light: boolean): void {
+        if (this._lightMode !== light) {
+            this._lightMode = light;
+            this.queue_repaint();
+        }
     }
 
     /**
@@ -111,6 +125,23 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
     }
 
+    // Grid lines/labels are painted with light "ink" on the dark backdrop;
+    // on the light-mode backdrop the same ink would be nearly invisible, so
+    // this picks a dark ink instead, keeping the dark-mode alpha by default.
+    private _ink(alphaDark: number, alphaLight: number = alphaDark): [number, number, number, number] {
+        return this._lightMode ? [0.08, 0.1, 0.13, alphaLight] : [1, 1, 1, alphaDark];
+    }
+
+    // Download/upload wave colors are a saturated neon cyan/magenta tuned for
+    // the dark backdrop; on the light backdrop they're swapped for the same
+    // darker teal/magenta shades already used by the light-mode panel labels
+    // (see .light-mode .speed-meter-download-label/-upload-label) to keep
+    // contrast against a light background.
+    private _waveColor(kind: 'rx' | 'tx'): [number, number, number] {
+        if (kind === 'rx') return this._lightMode ? [0.039, 0.494, 0.643] : [0.0, 0.82, 1.0];
+        return this._lightMode ? [0.671, 0.204, 0.431] : [0.97, 0.34, 0.99];
+    }
+
     private _draw(area: any): void {
         const cr = area.get_context();
         const [w, h] = area.get_surface_size();
@@ -138,7 +169,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         const stepX = w / (count - 1);
 
         // Subtle background grid
-        cr.setSourceRGBA(1, 1, 1, 0.05);
+        cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
             const y = (graphH / 3) * i;
@@ -147,35 +178,37 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.stroke();
         }
 
-        // Draw RX Curve (Download - Electric Cyan: 0.0, 0.82, 1.0)
-        this._drawBezierWave(cr, this._rxBuffer, peakSpeed, stepX, bottomY, graphH, [0.0, 0.82, 1.0]);
+        // Draw RX Curve (Download)
+        this._drawBezierWave(cr, this._rxBuffer, peakSpeed, stepX, bottomY, graphH, this._waveColor('rx'));
 
-        // Draw TX Curve (Upload - Coral Magenta: 0.97, 0.34, 0.99)
-        this._drawBezierWave(cr, this._txBuffer, peakSpeed, stepX, bottomY, graphH, [0.97, 0.34, 0.99]);
+        // Draw TX Curve (Upload)
+        this._drawBezierWave(cr, this._txBuffer, peakSpeed, stepX, bottomY, graphH, this._waveColor('tx'));
 
         // Top Header Info with neon bullets
         const currentRx = this._rxBuffer[count - 1];
         const currentTx = this._txBuffer[count - 1];
 
         // Download pill
-        cr.setSourceRGBA(0.0, 0.82, 1.0, 0.95);
+        const [rxR, rxG, rxB] = this._waveColor('rx');
+        cr.setSourceRGBA(rxR, rxG, rxB, 0.95);
         cr.setFontSize(9.5);
         cr.moveTo(8, 14);
         cr.showText(`\u2193 ${this._fmtSpeed(currentRx)}`);
 
         // Upload pill
-        cr.setSourceRGBA(0.97, 0.34, 0.99, 0.95);
+        const [txR, txG, txB] = this._waveColor('tx');
+        cr.setSourceRGBA(txR, txG, txB, 0.95);
         cr.moveTo(105, 14);
         cr.showText(`\u2191 ${this._fmtSpeed(currentTx)}`);
 
         // Peak Badge
-        cr.setSourceRGBA(1, 1, 1, 0.45);
+        cr.setSourceRGBA(...this._ink(0.45, 0.5));
         cr.setFontSize(8.5);
         cr.moveTo(w - 105, 14);
         cr.showText(`Peak: ${this._fmtSpeed(peakSpeed)}`);
 
         // Bottom axis labels
-        cr.setSourceRGBA(1, 1, 1, 0.3);
+        cr.setSourceRGBA(...this._ink(0.3, 0.38));
         cr.setFontSize(8);
         cr.moveTo(6, h - 2);
         cr.showText("-60s");
@@ -254,7 +287,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         const bottomY = h - 12;
 
         // Subtle horizontal guide lines
-        cr.setSourceRGBA(1, 1, 1, 0.05);
+        cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
             const y = (maxBarHeight / 3) * i;
@@ -277,6 +310,13 @@ class ActivityGraphImpl extends St.DrawingArea {
                 grad.addColorStopRGBA(0, 0.0, 0.82, 1.0, 1.0);
                 grad.addColorStopRGBA(1, 0.21, 0.52, 0.89, 0.5);
                 cr.setSource(grad);
+            } else if (this._lightMode) {
+                // Past days muted slate-blue bar (the dark-mode "frosted
+                // glass" white-on-dark fill would be invisible on light)
+                const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
+                grad.addColorStopRGBA(0, 0.42, 0.48, 0.58, 0.55);
+                grad.addColorStopRGBA(1, 0.42, 0.48, 0.58, 0.22);
+                cr.setSource(grad);
             } else {
                 // Past days subtle frosted glass bar
                 const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
@@ -289,12 +329,12 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.fill();
         }
 
-        cr.setSourceRGBA(1, 1, 1, 0.8);
+        cr.setSourceRGBA(...this._ink(0.8, 0.85));
         cr.setFontSize(9.5);
         cr.moveTo(8, 14);
         cr.showText(`Monthly Peak: ${this._fmt(this._peakValue)}`);
 
-        cr.setSourceRGBA(1, 1, 1, 0.4);
+        cr.setSourceRGBA(...this._ink(0.4, 0.45));
         cr.moveTo(0, h - 2);
         cr.showText("Day 1");
         cr.moveTo(w - 45, h - 2);

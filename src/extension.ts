@@ -26,6 +26,7 @@ const Kb = 1000;
 const Mb = Kb * 1000;
 
 const UTF8_DECODER = new TextDecoder('utf-8');
+const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
 
 interface StatRowWidgets {
     valueLabel: St.Label;
@@ -33,6 +34,39 @@ interface StatRowWidgets {
     lastTotal: string;
     lastSub: string;
 }
+
+interface SpeedTestLocation {
+    label: string;
+    lat: number | null;
+    lon: number | null;
+}
+
+interface OoklaServer {
+    host: string;
+    name: string;
+    sponsor: string;
+}
+
+// Curated set of real-world locations used to bias Ookla's public server-list
+// API (speedtest.net) toward a specific region. "Auto" omits lat/lon so the
+// API falls back to GeoIP-based nearest-server selection, exactly like the
+// official Speedtest apps/CLI. The actual server (sponsor/host) within a
+// region is resolved live on every test run - these are just the regional
+// anchors the user picks between.
+const SPEEDTEST_LOCATIONS: SpeedTestLocation[] = [
+    { label: 'Auto · Nearest', lat: null, lon: null },
+    { label: 'New York, US', lat: 40.7128, lon: -74.0060 },
+    { label: 'San Francisco, US', lat: 37.7749, lon: -122.4194 },
+    { label: 'Toronto, CA', lat: 43.6532, lon: -79.3832 },
+    { label: 'São Paulo, BR', lat: -23.5505, lon: -46.6333 },
+    { label: 'London, UK', lat: 51.5074, lon: -0.1278 },
+    { label: 'Frankfurt, DE', lat: 50.1109, lon: 8.6821 },
+    { label: 'Dubai, AE', lat: 25.2048, lon: 55.2708 },
+    { label: 'Mumbai, IN', lat: 19.0760, lon: 72.8777 },
+    { label: 'Singapore, SG', lat: 1.3521, lon: 103.8198 },
+    { label: 'Tokyo, JP', lat: 35.6762, lon: 139.6503 },
+    { label: 'Sydney, AU', lat: -33.8688, lon: 151.2093 },
+];
 
 /**
  * HIGH-PERFORMANCE INTERNET SPEED METER
@@ -68,10 +102,23 @@ export default class SpeedMeterExtension extends Extension {
     private _speedTestLossVal: St.Label | null = null;
     private _speedTestQualityVal: St.Label | null = null;
     private _speedTestRunBtnLabel: St.Label | null = null;
+    private _speedTestServerSub: St.Label | null = null;
+    private _speedTestDropdownBtn: St.Button | null = null;
+    private _speedTestDropdownBtnId: number = 0;
+    private _speedTestDropdownArrow: St.Icon | null = null;
+    private _speedTestDropdownScroll: St.ScrollView | null = null;
+    private _speedTestDropdownItems: { btn: St.Button; check: St.Icon; clickId: number }[] = [];
+    private _speedTestLocationIndex: number = 0;
     private _isTestingSpeed: boolean = false;
     private _lastNetworkUpdate: number = 0;
     private _soupSession: Soup.Session | null = null;
     private _soupCancellable: Gio.Cancellable | null = null;
+    // Separate, longer-timeout session for speedtest transfers only - the
+    // general-purpose session above keeps a short timeout for quick lookups
+    // (public IP, etc.) and would otherwise abort large download/upload
+    // chunks on slower connections before they complete.
+    private _speedTestSession: Soup.Session | null = null;
+    private _speedTestCancellable: Gio.Cancellable | null = null;
 
     private _sessionRx: number = 0;
     private _sessionTx: number = 0;
@@ -93,12 +140,23 @@ export default class SpeedMeterExtension extends Extension {
 
     private _settingsChangedId: number = 0;
     private _menuOpenStateId: number = 0;
+    private _interfaceSettings: Gio.Settings | null = null;
+    private _colorSchemeChangedId: number = 0;
+    private _gtkThemeChangedId: number = 0;
+    private _accentColorChangedId: number = 0;
+    private _currentAccentClass: string = '';
+    private _hasAccentColorKey: boolean = false;
     private _lastDownText: string = '';
     private _lastUpText: string = '';
 
     private _statsSectionItem: PopupMenu.PopupBaseMenuItem | null = null;
     private _dashboardItem: PopupMenu.PopupBaseMenuItem | null = null;
     private _actionsItem: PopupMenu.PopupBaseMenuItem | null = null;
+    private _dashboardBox: St.BoxLayout | null = null;
+    private _statsBox: St.BoxLayout | null = null;
+    private _actionsBox: St.BoxLayout | null = null;
+    private _vpnIsActive: boolean = false;
+    private _vpnColor: string = '';
     private _statToday: StatRowWidgets | null = null;
     private _statThisMonth: StatRowWidgets | null = null;
     private _statLastMonth: StatRowWidgets | null = null;
@@ -115,6 +173,32 @@ export default class SpeedMeterExtension extends Extension {
         this._lastDownText = '';
         this._lastUpText = '';
         this._soupCancellable = new Gio.Cancellable();
+
+        try {
+            this._interfaceSettings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
+            // _isLightMode() keys off "gtk-theme" (see its comment for why),
+            // but "color-scheme" still changes alongside it on every system
+            // that flips both together, so listen to both and just re-run
+            // the same no-op-safe apply either way.
+            this._colorSchemeChangedId = this._interfaceSettings.connect('changed::color-scheme', () => {
+                this._applyColorScheme();
+            });
+            this._gtkThemeChangedId = this._interfaceSettings.connect('changed::gtk-theme', () => {
+                this._applyColorScheme();
+            });
+            // 'accent-color' only exists on GNOME 46+'s interface schema; older
+            // shells simply won't have the key, so every read/connect of it is
+            // guarded behind this one cached check.
+            this._hasAccentColorKey = this._interfaceSettings.settings_schema.has_key('accent-color');
+            if (this._hasAccentColorKey) {
+                this._accentColorChangedId = this._interfaceSettings.connect('changed::accent-color', () => {
+                    this._applyAccentColor();
+                });
+            }
+        } catch (e) {
+            this._interfaceSettings = null;
+            this._hasAccentColorKey = false;
+        }
 
         this._statsManager = new StatsManager(this.path);
         this._settings = this.getSettings();
@@ -194,6 +278,7 @@ export default class SpeedMeterExtension extends Extension {
             orientation: Clutter.Orientation.VERTICAL,
             style_class: 'speed-meter-dashboard'
         });
+        this._dashboardBox = dashboardBox;
 
         const headerBox = new St.BoxLayout({ 
             orientation: Clutter.Orientation.VERTICAL, 
@@ -305,6 +390,7 @@ export default class SpeedMeterExtension extends Extension {
             x_expand: true,
             style_class: 'speed-meter-stats-card',
         });
+        this._statsBox = statsBox;
 
         const todayRow = this._createStatRow('Today', '#3584e4');
         const thisMonthRow = this._createStatRow('This Month', '#2ec27e');
@@ -334,6 +420,7 @@ export default class SpeedMeterExtension extends Extension {
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
         });
+        this._actionsBox = actionsBox;
 
         const { button: resetBtn } = this._createButtonWithIcon('edit-undo-symbolic', 'Reset', 'speed-meter-button');
         resetBtn.connect('clicked', () => {
@@ -369,7 +456,122 @@ export default class SpeedMeterExtension extends Extension {
             if (open) this._updateNetworkInfo();
         });
 
+        this._applyColorScheme();
+        this._applyAccentColor();
         this._updateMenu();
+    }
+
+    // Most of this extension's UI hardcodes light-colored text/tints meant to
+    // sit on the shell's normal dark panel/popup chrome. When the actual
+    // shell theme renders a light panel/popup instead, that text becomes
+    // unreadable against the resulting light background. The Speedtest
+    // panel and activity graph supply their own fixed dark backdrop
+    // regardless of theme, so they're deliberately left alone - see the
+    // ".light-mode"/".dark-mode" rules in stylesheet.css for what's covered.
+    //
+    // This can't just read "color-scheme" (prefer-light/prefer-dark/default):
+    // stock GNOME Shell's bundled Adwaita theme keeps the panel/popup chrome
+    // dark regardless of that app-level preference, but Ubuntu's Yaru shell
+    // theme does NOT follow color-scheme for the shell chrome - it follows
+    // which theme directory is actually loaded ("Yaru" vs "Yaru-dark" /
+    // "Yaru-<accent>-dark", named by "gtk-theme"), and Ubuntu's "Standard"
+    // appearance option sets color-scheme to "default" while still loading
+    // the *light* "Yaru" shell theme (white popup-menu-content, #222 text).
+    // Treating "default" as dark (the old behavior) left Ubuntu's default
+    // "Standard" users with illegible light-on-light text. So: trust the
+    // "-dark" suffix convention on "gtk-theme" whenever a real theme is
+    // installed, and only fall back to always-dark for stock Adwaita, which
+    // has no such light/dark split to detect.
+    private _isLightMode(): boolean {
+        try {
+            const scheme = this._interfaceSettings?.get_string('color-scheme');
+            if (scheme === 'prefer-dark') return false;
+            if (scheme === 'prefer-light') return true;
+
+            const gtkTheme = this._interfaceSettings?.get_string('gtk-theme') ?? '';
+            if (/-dark$/i.test(gtkTheme)) return false;
+            if (/light/i.test(gtkTheme)) return true;
+
+            // In Ubuntu & stock GNOME, default appearance with 'Yaru' or 'Adwaita' is light
+            if (gtkTheme.startsWith('Yaru') || gtkTheme === 'Adwaita') return true;
+
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    private _updateVpnStyle(): void {
+        if (!this._vpnValue) return;
+        const light = this._isLightMode();
+        if (this._vpnIsActive) {
+            this._vpnValue.set_style(`color: ${this._vpnColor}; font-weight: bold;`);
+        } else {
+            this._vpnValue.set_style(`color: ${light ? '#57606a' : 'rgba(255,255,255,0.45)'}; font-weight: 500;`);
+        }
+    }
+
+    // Applies exactly one of "light-mode"/"dark-mode" to all themed actors -
+    // both parent containers and individual section cards receive the class.
+    private _applyColorScheme(): void {
+        const light = this._isLightMode();
+        const menu = this._indicator?.menu as any;
+        const menuBox = menu?.box as St.Widget | undefined;
+        const menuActor = menu?.actor as St.Widget | undefined;
+        const actors = [
+            this._box,
+            menuActor,
+            menuBox,
+            this._dashboardItem,
+            this._statsSectionItem,
+            this._actionsItem,
+            this._speedTestPanelItem,
+            this._dashboardBox,
+            this._statsBox,
+            this._actionsBox,
+        ];
+        for (const actor of actors) {
+            if (!actor) continue;
+            const a = (actor as any).actor ?? actor;
+            if (typeof (a as any).add_style_class_name === 'function') {
+                (a as any).add_style_class_name(light ? 'light-mode' : 'dark-mode');
+                (a as any).remove_style_class_name(light ? 'dark-mode' : 'light-mode');
+            }
+        }
+        this._activityGraph?.setLightMode(light);
+        this._updateVpnStyle();
+    }
+
+    // GNOME 46+ system accent colors
+    private static readonly ACCENT_COLORS = ['blue', 'teal', 'green', 'yellow', 'orange', 'red', 'pink', 'purple', 'slate'];
+
+    private _getAccentColor(): string {
+        if (!this._hasAccentColorKey) return 'blue';
+        try {
+            const accent = this._interfaceSettings?.get_string('accent-color');
+            if (accent && SpeedMeterExtension.ACCENT_COLORS.includes(accent)) return accent;
+        } catch (e) {
+            // fall through to default
+        }
+        return 'blue';
+    }
+
+    private _applyAccentColor(): void {
+        const accent = this._getAccentColor();
+        const nextClass = `accent-${accent}`;
+        if (nextClass === this._currentAccentClass) return;
+        const menu = this._indicator?.menu as any;
+        const menuBox = menu?.box as St.Widget | undefined;
+        const menuActor = menu?.actor as St.Widget | undefined;
+        for (const actor of [this._box, menuActor, menuBox, this._dashboardBox, this._statsBox]) {
+            if (!actor) continue;
+            const a = (actor as any).actor ?? actor;
+            if (typeof (a as any).add_style_class_name === 'function') {
+                if (this._currentAccentClass) (a as any).remove_style_class_name(this._currentAccentClass);
+                (a as any).add_style_class_name(nextClass);
+            }
+        }
+        this._currentAccentClass = nextClass;
     }
 
     private _setDefaultViewVisible(visible: boolean): void {
@@ -510,7 +712,7 @@ export default class SpeedMeterExtension extends Extension {
     }
 
     private _updateMenu(): void {
-        if (!this._statsManager || (this._indicator && !(this._indicator.menu as any).isOpen)) return;
+        if (!this._indicator || !this._statsManager || !(this._indicator.menu as any)?.isOpen) return;
 
         const today = this._statsManager.getToday();
         const thisMonth = this._statsManager.getThisMonth();
@@ -565,28 +767,34 @@ export default class SpeedMeterExtension extends Extension {
         // 2. Enhanced Smart VPN & Mesh Network Inspector
         this._spawnAsync('ip addr', (stdout) => {
             let vpnText = 'None';
-            let vpnStyle = 'color: rgba(255,255,255,0.4);';
+            this._vpnIsActive = false;
+            this._vpnColor = '';
 
             if (/tailscale\d+/i.test(stdout)) {
                 vpnText = 'Tailscale Mesh';
-                vpnStyle = 'color: #2ec27e; font-weight: bold;';
+                this._vpnIsActive = true;
+                this._vpnColor = '#2ec27e';
             } else if (/wg\d*|wireguard/i.test(stdout)) {
                 vpnText = 'WireGuard';
-                vpnStyle = 'color: #3584e4; font-weight: bold;';
+                this._vpnIsActive = true;
+                this._vpnColor = '#3584e4';
             } else if (/warp/i.test(stdout)) {
                 vpnText = 'Cloudflare WARP';
-                vpnStyle = 'color: #ffbe6f; font-weight: bold;';
+                this._vpnIsActive = true;
+                this._vpnColor = '#ffbe6f';
             } else if (/zt\w+/i.test(stdout)) {
                 vpnText = 'ZeroTier Mesh';
-                vpnStyle = 'color: #f66151; font-weight: bold;';
+                this._vpnIsActive = true;
+                this._vpnColor = '#f66151';
             } else if (/tun\d*|tap\d*|ppp\d*|openvpn/i.test(stdout)) {
                 vpnText = 'OpenVPN / TUN';
-                vpnStyle = 'color: #2ec27e; font-weight: bold;';
+                this._vpnIsActive = true;
+                this._vpnColor = '#2ec27e';
             }
 
             if (this._vpnValue) {
                 this._vpnValue.set_text(vpnText);
-                this._vpnValue.set_style(vpnStyle);
+                this._updateVpnStyle();
             }
         });
 
@@ -607,8 +815,10 @@ export default class SpeedMeterExtension extends Extension {
 
     private _getSoupSession(): Soup.Session {
         if (!this._soupSession) {
-            this._soupSession = new Soup.Session();
-            this._soupSession.timeout = 10;
+            this._soupSession = new Soup.Session({
+                user_agent: BROWSER_UA,
+                timeout: 10,
+            });
         }
         return this._soupSession;
     }
@@ -705,32 +915,178 @@ export default class SpeedMeterExtension extends Extension {
         const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-ookla-panel' });
         const container = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-box' });
 
-        // Header: Speedtest Brand + Server + Close button
-        const header = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-header' });
-        const brandBox = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true });
-        const brandTitle = new St.Label({ text: 'SPEEDTEST', style_class: 'speed-meter-ookla-brand' });
-        const serverSub = new St.Label({ text: 'Cloudflare Edge CDN • Auto Optimal', style_class: 'speed-meter-ookla-server' });
-        brandBox.add_child(brandTitle);
-        brandBox.add_child(serverSub);
+        // ── Header ──────────────────────────────────────────────────────────
+        // Left: SPEEDTEST brand  |  Right: close button
+        const header = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-ookla-header',
+        });
+
+        const brandStack = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const brandTitle = new St.Label({
+            text: 'SPEEDTEST',
+            style_class: 'speed-meter-ookla-brand',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const brandSub = new St.Label({
+            text: 'powered by Ookla',
+            style_class: 'speed-meter-ookla-brand-sub',
+        });
+        brandStack.add_child(brandTitle);
+        brandStack.add_child(brandSub);
 
         const closeBtn = new St.Button({
             style_class: 'speed-meter-button speed-meter-close-btn',
             child: new St.Icon({ icon_name: 'window-close-symbolic', style_class: 'speed-meter-button-icon' }),
+            y_align: Clutter.ActorAlign.CENTER,
         });
         closeBtn.connect('clicked', () => {
+            this._setSpeedTestDropdownOpen(false);
             if (this._speedTestPanelItem) {
                 this._speedTestPanelItem.visible = false;
                 this._setDefaultViewVisible(true);
             }
         });
 
-        header.add_child(brandBox);
+        header.add_child(brandStack);
         header.add_child(closeBtn);
 
-        // Ping Strip: PING | JITTER | LOSS
-        const pingStrip = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-ping-strip' });
-        const pingBox = this._createOoklaPingMetric('PING', '-- ms');
-        const jitterBox = this._createOoklaPingMetric('JITTER', '-- ms');
+        // ── Server Dropdown Trigger ──────────────────────────────────────────
+        const serverDropdownBtn = new St.Button({
+            style_class: 'speed-meter-server-dropdown-btn',
+            x_expand: true,
+            can_focus: true,
+        });
+        const serverDropdownInner = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-server-dropdown-row',
+        });
+
+        const serverLeadingBox = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+            style_class: 'speed-meter-server-leading',
+        });
+        const serverGlobeIcon = new St.Icon({
+            icon_name: 'network-wireless-symbolic',
+            style_class: 'speed-meter-server-dropdown-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const serverTextStack = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const serverCaption = new St.Label({
+            text: 'SERVER',
+            style_class: 'speed-meter-server-caption',
+        });
+        this._speedTestServerSub = new St.Label({
+            text: SPEEDTEST_LOCATIONS[0].label,
+            style_class: 'speed-meter-server-dropdown-label',
+            x_expand: true,
+        });
+        serverTextStack.add_child(serverCaption);
+        serverTextStack.add_child(this._speedTestServerSub);
+        serverLeadingBox.add_child(serverGlobeIcon);
+        serverLeadingBox.add_child(serverTextStack);
+
+        this._speedTestDropdownArrow = new St.Icon({
+            icon_name: 'pan-down-symbolic',
+            style_class: 'speed-meter-server-dropdown-arrow',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        serverDropdownInner.add_child(serverLeadingBox);
+        serverDropdownInner.add_child(this._speedTestDropdownArrow);
+        serverDropdownBtn.set_child(serverDropdownInner);
+
+        this._speedTestDropdownBtn = serverDropdownBtn;
+        this._speedTestDropdownBtnId = serverDropdownBtn.connect('clicked', () => {
+            if (this._isTestingSpeed) return;
+            const isOpen = this._speedTestDropdownScroll?.visible ?? false;
+            this._setSpeedTestDropdownOpen(!isOpen);
+        });
+
+        // ── Dropdown List ───────────────────────────────────────────────────
+        const listContainer = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            style_class: 'speed-meter-server-dropdown-list',
+            x_expand: true,
+        });
+
+        this._speedTestDropdownItems = [];
+        SPEEDTEST_LOCATIONS.forEach((loc, idx) => {
+            const isSel = idx === this._speedTestLocationIndex;
+            const itemBtn = new St.Button({
+                style_class: 'speed-meter-server-dropdown-item' + (isSel ? ' selected' : ''),
+                x_expand: true,
+                can_focus: true,
+            });
+            const itemRow = new St.BoxLayout({
+                orientation: Clutter.Orientation.HORIZONTAL,
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+                style_class: 'speed-meter-server-item-box',
+            });
+
+            // Auto gets a globe, others get a location pin icon
+            const itemIcon = new St.Icon({
+                icon_name: idx === 0 ? 'network-wireless-symbolic' : 'mark-location-symbolic',
+                style_class: 'speed-meter-server-item-icon',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            const itemLabel = new St.Label({
+                text: loc.label,
+                style_class: 'speed-meter-server-item-label',
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            const checkIcon = new St.Icon({
+                icon_name: 'object-select-symbolic',
+                style_class: 'speed-meter-server-item-check',
+                y_align: Clutter.ActorAlign.CENTER,
+                visible: isSel,
+            });
+            itemRow.add_child(itemIcon);
+            itemRow.add_child(itemLabel);
+            itemRow.add_child(checkIcon);
+            itemBtn.set_child(itemRow);
+
+            const clickId = itemBtn.connect('clicked', () => {
+                this._selectSpeedTestLocation(idx);
+            });
+            this._speedTestDropdownItems.push({ btn: itemBtn, check: checkIcon, clickId });
+            listContainer.add_child(itemBtn);
+        });
+
+        this._speedTestDropdownScroll = new St.ScrollView({
+            style_class: 'speed-meter-server-dropdown-scroll',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            overlay_scrollbars: true,
+            x_expand: true,
+            visible: false,
+        });
+        this._speedTestDropdownScroll.set_child(listContainer);
+
+        // ── Ping / Jitter / Loss Strip ──────────────────────────────────────
+        const pingStrip = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            style_class: 'speed-meter-ookla-ping-strip',
+        });
+        const pingBox = this._createOoklaPingMetric('PING', '--');
+        const jitterBox = this._createOoklaPingMetric('JITTER', '--');
         const lossBox = this._createOoklaPingMetric('LOSS', '0%');
 
         this._speedTestPingVal = pingBox.valueLabel;
@@ -741,53 +1097,101 @@ export default class SpeedMeterExtension extends Extension {
         pingStrip.add_child(jitterBox.container);
         pingStrip.add_child(lossBox.container);
 
-        // Ookla Speed Gauges Row (Side-by-side Download & Upload)
-        const gaugesRow = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-gauges-row' });
+        // ── Speed Gauges Row ────────────────────────────────────────────────
+        const gaugesRow = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            style_class: 'speed-meter-ookla-gauges-row',
+        });
 
-        // Download Gauge Card
-        const downCard = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-gauge-card speed-meter-down-card' });
-        const downHeader = new St.Label({ text: '\u2193 DOWNLOAD', style_class: 'speed-meter-ookla-gauge-title speed-meter-down-title' });
+        // Download Card
+        const downCard = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            style_class: 'speed-meter-ookla-gauge-card speed-meter-down-card',
+        });
+        const downArrow = new St.Label({ text: '↓', style_class: 'speed-meter-ookla-gauge-arrow speed-meter-down-arrow' });
+        const downLabel2 = new St.Label({ text: 'DOWNLOAD', style_class: 'speed-meter-ookla-gauge-title speed-meter-down-title' });
+        const downTitleRow = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, style_class: 'speed-meter-gauge-title-row' });
+        downTitleRow.add_child(downArrow);
+        downTitleRow.add_child(downLabel2);
         this._speedTestDownVal = new St.Label({ text: '--', style_class: 'speed-meter-ookla-gauge-value speed-meter-down-value' });
         const downUnit = new St.Label({ text: 'Mbps', style_class: 'speed-meter-ookla-gauge-unit' });
-        downCard.add_child(downHeader);
+        downCard.add_child(downTitleRow);
         downCard.add_child(this._speedTestDownVal);
         downCard.add_child(downUnit);
 
-        // Upload Gauge Card
-        const upCard = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-gauge-card speed-meter-up-card' });
-        const upHeader = new St.Label({ text: '\u2191 UPLOAD', style_class: 'speed-meter-ookla-gauge-title speed-meter-up-title' });
+        // Upload Card
+        const upCard = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            style_class: 'speed-meter-ookla-gauge-card speed-meter-up-card',
+        });
+        const upArrow = new St.Label({ text: '↑', style_class: 'speed-meter-ookla-gauge-arrow speed-meter-up-arrow' });
+        const upLabel2 = new St.Label({ text: 'UPLOAD', style_class: 'speed-meter-ookla-gauge-title speed-meter-up-title' });
+        const upTitleRow = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, style_class: 'speed-meter-gauge-title-row' });
+        upTitleRow.add_child(upArrow);
+        upTitleRow.add_child(upLabel2);
         this._speedTestUpVal = new St.Label({ text: '--', style_class: 'speed-meter-ookla-gauge-value speed-meter-up-value' });
         const upUnit = new St.Label({ text: 'Mbps', style_class: 'speed-meter-ookla-gauge-unit' });
-        upCard.add_child(upHeader);
+        upCard.add_child(upTitleRow);
         upCard.add_child(this._speedTestUpVal);
         upCard.add_child(upUnit);
 
         gaugesRow.add_child(downCard);
         gaugesRow.add_child(upCard);
 
-        // Status & Rating Banner
-        const statusBox = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-status-box' });
-        this._speedTestQualityVal = new St.Label({ text: 'Press GO to start speed test', style_class: 'speed-meter-ookla-status-text' });
+        // ── Status Banner ───────────────────────────────────────────────────
+        const statusBox = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            style_class: 'speed-meter-ookla-status-box',
+        });
+        this._speedTestQualityVal = new St.Label({
+            text: 'Tap START TEST to measure your connection',
+            style_class: 'speed-meter-ookla-status-text',
+            x_align: Clutter.ActorAlign.CENTER,
+        });
         statusBox.add_child(this._speedTestQualityVal);
 
-        // Iconic Ookla Big "GO" Button
-        const goBtnRow = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-go-row' });
+        // ── Action Button ────────────────────────────────────────────────────
         const goBtn = new St.Button({
             style_class: 'speed-meter-ookla-go-button',
             x_expand: true,
+            can_focus: true,
         });
-        this._speedTestRunBtnLabel = new St.Label({ text: 'GO', style_class: 'speed-meter-ookla-go-label' });
-        goBtn.set_child(this._speedTestRunBtnLabel);
+        const goBtnInner = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-ookla-go-inner',
+        });
+        const goIcon = new St.Icon({
+            icon_name: 'network-transmit-receive-symbolic',
+            style_class: 'speed-meter-ookla-go-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._speedTestRunBtnLabel = new St.Label({
+            text: 'START TEST',
+            style_class: 'speed-meter-ookla-go-label',
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        goBtnInner.add_child(goIcon);
+        goBtnInner.add_child(this._speedTestRunBtnLabel);
+        goBtn.set_child(goBtnInner);
         goBtn.connect('clicked', () => {
             this._runFullSpeedTest();
         });
-        goBtnRow.add_child(goBtn);
 
+        // ── Assemble ─────────────────────────────────────────────────────────
         container.add_child(header);
+        container.add_child(serverDropdownBtn);
+        container.add_child(this._speedTestDropdownScroll);
         container.add_child(pingStrip);
         container.add_child(gaugesRow);
         container.add_child(statusBox);
-        container.add_child(goBtnRow);
+        container.add_child(goBtn);
 
         item.add_child(container);
         (item as any).visible = false; // Hidden by default
@@ -796,13 +1200,18 @@ export default class SpeedMeterExtension extends Extension {
     }
 
     private _createOoklaPingMetric(title: string, initVal: string): { container: St.BoxLayout, valueLabel: St.Label } {
-        const container = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-ping-item' });
-        const lbl = new St.Label({ text: title, style_class: 'speed-meter-ookla-ping-lbl' });
-        const valueLabel = new St.Label({ text: initVal, style_class: 'speed-meter-ookla-ping-val' });
+        const container = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            style_class: 'speed-meter-ookla-ping-item',
+        });
+        const lbl = new St.Label({ text: title, style_class: 'speed-meter-ookla-ping-lbl', x_align: Clutter.ActorAlign.CENTER });
+        const valueLabel = new St.Label({ text: initVal, style_class: 'speed-meter-ookla-ping-val', x_align: Clutter.ActorAlign.CENTER });
         container.add_child(lbl);
         container.add_child(valueLabel);
         return { container, valueLabel };
     }
+
 
     private _notify(msg: string, details?: string): void {
         try {
@@ -814,106 +1223,425 @@ export default class SpeedMeterExtension extends Extension {
         }
     }
 
+    private _getSpeedTestSoupSession(): Soup.Session {
+        if (!this._speedTestSession) {
+            this._speedTestSession = new Soup.Session({
+                user_agent: BROWSER_UA,
+                timeout: 25,
+            });
+        }
+        return this._speedTestSession;
+    }
+
+    private _setSpeedTestDropdownOpen(open: boolean): void {
+        if (!this._speedTestDropdownScroll) return;
+        this._speedTestDropdownScroll.visible = open;
+        if (this._speedTestDropdownArrow) {
+            this._speedTestDropdownArrow.icon_name = open ? 'pan-up-symbolic' : 'pan-down-symbolic';
+        }
+        if (this._speedTestDropdownBtn) {
+            if (open) {
+                this._speedTestDropdownBtn.add_style_class_name('active');
+            } else {
+                this._speedTestDropdownBtn.remove_style_class_name('active');
+            }
+        }
+    }
+
+    private _updateSpeedTestDropdownItems(): void {
+        this._speedTestDropdownItems.forEach((item, i) => {
+            const isSel = i === this._speedTestLocationIndex;
+            if (isSel) {
+                item.btn.add_style_class_name('selected');
+            } else {
+                item.btn.remove_style_class_name('selected');
+            }
+            item.check.visible = isSel;
+        });
+    }
+
+    private _selectSpeedTestLocation(idx: number): void {
+        if (this._isTestingSpeed) return;
+        this._speedTestLocationIndex = idx;
+        if (this._speedTestServerSub) {
+            this._speedTestServerSub.set_text(SPEEDTEST_LOCATIONS[idx].label);
+        }
+        if (this._speedTestQualityVal) {
+            this._speedTestQualityVal.set_text('Press START TEST to begin');
+        }
+        this._updateSpeedTestDropdownItems();
+        this._setSpeedTestDropdownOpen(false);
+    }
+
+    // Resolves a live Ookla (speedtest.net) server for the currently selected
+    // region via their public server-list API - probes candidate servers in parallel
+    // to choose the lowest-latency, responsive real server.
+    private _fetchOoklaServer(callback: (server: OoklaServer | null) => void): void {
+        // Captured once and reused for every request this call makes, rather
+        // than re-reading `this._speedTestCancellable` each time: disable()
+        // cancels the cancellable before nulling the field, so a closure that
+        // re-read the field would see `undefined` and silently stop noticing
+        // the cancellation, retrying requests against an aborted session.
+        const cancellable = this._speedTestCancellable;
+        const loc = SPEEDTEST_LOCATIONS[this._speedTestLocationIndex];
+        let url = 'https://www.speedtest.net/api/js/servers?engine=js&limit=5&https_functional=true';
+        if (loc.lat !== null && loc.lon !== null) {
+            url += `&lat=${loc.lat}&lon=${loc.lon}`;
+        }
+
+        const session = this._getSpeedTestSoupSession();
+        const message = Soup.Message.new('GET', url);
+        if (!message) {
+            callback(null);
+            return;
+        }
+        message.get_request_headers().append('User-Agent', BROWSER_UA);
+
+        session.send_and_read_async(
+            message,
+            GLib.PRIORITY_DEFAULT,
+            cancellable as any,
+            (sess, res) => {
+                try {
+                    const bytes = sess?.send_and_read_finish(res);
+                    const data = bytes ? bytes.get_data() : null;
+                    if (message.get_status() === Soup.Status.OK && data) {
+                        const servers = JSON.parse(UTF8_DECODER.decode(data));
+                        if (Array.isArray(servers) && servers.length > 0) {
+                            const candidates = servers.slice(0, 4).filter(s => s && s.host);
+                            if (candidates.length === 0) {
+                                callback(null);
+                                return;
+                            }
+
+                            let remaining = candidates.length;
+                            const validResults: { server: OoklaServer; ping: number }[] = [];
+                            let done = false;
+
+                            // Safety timeout for candidate probing: 2000ms.
+                            // Tracked so finalize() can remove it immediately
+                            // once every candidate has reported, instead of
+                            // leaving it to fire uselessly later.
+                            let probeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                                probeTimeoutId = 0;
+                                finalize();
+                                return GLib.SOURCE_REMOVE;
+                            });
+
+                            const finalize = () => {
+                                if (done) return;
+                                done = true;
+                                if (probeTimeoutId) {
+                                    GLib.Source.remove(probeTimeoutId);
+                                    probeTimeoutId = 0;
+                                }
+                                if (validResults.length > 0) {
+                                    validResults.sort((a, b) => a.ping - b.ping);
+                                    callback(validResults[0].server);
+                                } else if (candidates.length > 0) {
+                                    callback({
+                                        host: String(candidates[0].host),
+                                        name: String(candidates[0].name ?? ''),
+                                        sponsor: String(candidates[0].sponsor ?? ''),
+                                    });
+                                } else {
+                                    callback(null);
+                                }
+                            };
+
+                            for (const srv of candidates) {
+                                const host = String(srv.host);
+                                const pingMsg = Soup.Message.new('GET', `https://${host}/speedtest/latency.txt`);
+                                if (!pingMsg) {
+                                    remaining--;
+                                    if (remaining <= 0) finalize();
+                                    continue;
+                                }
+                                pingMsg.get_request_headers().append('User-Agent', BROWSER_UA);
+                                const startPing = GLib.get_monotonic_time();
+                                session.send_and_read_async(pingMsg, GLib.PRIORITY_DEFAULT, cancellable as any, (s2, res2) => {
+                                    const elapsedMs = (GLib.get_monotonic_time() - startPing) / 1000;
+                                    try {
+                                        s2?.send_and_read_finish(res2);
+                                        if (pingMsg.get_status() === Soup.Status.OK) {
+                                            validResults.push({
+                                                server: {
+                                                    host,
+                                                    name: String(srv.name ?? ''),
+                                                    sponsor: String(srv.sponsor ?? ''),
+                                                },
+                                                ping: elapsedMs,
+                                            });
+                                        }
+                                    } catch (e) {}
+                                    remaining--;
+                                    if (remaining <= 0) finalize();
+                                });
+                            }
+                            return;
+                        }
+                    }
+                } catch (e) {}
+                callback(null);
+            }
+        );
+    }
+
+    // Measures latency against the Ookla server's own latency.txt endpoint
+    private _runOoklaLatencyTest(
+        host: string,
+        callback: (avgMs: string, jitterMs: string, lossPct: number | null) => void
+    ): void {
+        const session = this._getSpeedTestSoupSession();
+        // Captured once - see the comment in _fetchOoklaServer() for why this
+        // must not re-read `this._speedTestCancellable` on each call.
+        const cancellable = this._speedTestCancellable;
+        const attempts = 5;
+        const samples: number[] = [];
+        let failures = 0;
+        let i = 0;
+
+        const step = () => {
+            if (cancellable?.is_cancelled()) {
+                callback('N/A', 'N/A', null);
+                return;
+            }
+            if (i >= attempts) {
+                if (samples.length === 0) {
+                    callback('N/A', 'N/A', null);
+                    return;
+                }
+                const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+                const jitter = samples.length > 1
+                    ? samples.slice(1).reduce((sum, v, idx) => sum + Math.abs(v - samples[idx]), 0) / (samples.length - 1)
+                    : 0;
+                callback(`${Math.round(avg)} ms`, `${jitter.toFixed(1)} ms`, (failures / attempts) * 100);
+                return;
+            }
+            i++;
+
+            const msg = Soup.Message.new('GET', `https://${host}/speedtest/latency.txt?x=${Math.random()}`);
+            if (!msg) {
+                failures++;
+                step();
+                return;
+            }
+            msg.get_request_headers().append('User-Agent', BROWSER_UA);
+            const start = GLib.get_monotonic_time();
+            session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, cancellable as any, (sess, res) => {
+                try {
+                    sess?.send_and_read_finish(res);
+                    if (msg.get_status() === Soup.Status.OK) {
+                        samples.push((GLib.get_monotonic_time() - start) / 1000);
+                    } else {
+                        failures++;
+                    }
+                } catch (e) {
+                    failures++;
+                }
+                step();
+            });
+        };
+        step();
+    }
+
+    // Runs `concurrency` parallel streams against the real Ookla server with
+    // adaptive chunk sizing and real-time live speed updates.
+    private _runOoklaThroughputTest(
+        host: string,
+        mode: 'download' | 'upload',
+        durationMs: number,
+        concurrency: number,
+        onProgress: (mbps: string) => void,
+        onDone: (mbps: string) => void
+    ): void {
+        const session = this._getSpeedTestSoupSession();
+        // Captured once - see the comment in _fetchOoklaServer() for why this
+        // must not re-read `this._speedTestCancellable` on each call.
+        const cancellable = this._speedTestCancellable;
+        const downloadSizes = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500];
+        const uploadSizes = [250000, 500000, 1000000, 2000000, 4000000];
+        const sizes = mode === 'download' ? downloadSizes : uploadSizes;
+        const uploadBuffer = mode === 'upload' ? new Uint8Array(uploadSizes[uploadSizes.length - 1]) : null;
+
+        const startTime = GLib.get_monotonic_time();
+        const deadline = startTime + durationMs * 1000;
+        let totalBytes = 0;
+        let activeWorkers = concurrency;
+        let finished = false;
+
+        const finish = () => {
+            if (finished) return;
+            finished = true;
+            if (safetyTimeoutId) {
+                GLib.Source.remove(safetyTimeoutId);
+                safetyTimeoutId = 0;
+            }
+            const elapsedSec = (GLib.get_monotonic_time() - startTime) / 1000000;
+            const mbps = elapsedSec > 0 && totalBytes > 0
+                ? ((totalBytes * 8) / 1000000 / elapsedSec).toFixed(1)
+                : '0.0';
+            onDone(mbps);
+        };
+
+        let safetyTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, durationMs + 2000, () => {
+            finish();
+            return GLib.SOURCE_REMOVE;
+        });
+
+        const workerStep = (sizeIdx: number) => {
+            if (finished) return;
+            if (GLib.get_monotonic_time() >= deadline || cancellable?.is_cancelled()) {
+                activeWorkers--;
+                if (activeWorkers <= 0) finish();
+                return;
+            }
+
+            const idx = Math.max(0, Math.min(sizeIdx, sizes.length - 1));
+            const reqStart = GLib.get_monotonic_time();
+
+            const onReqDone = (bytesTransferred: number, ok: boolean) => {
+                if (finished) return;
+                if (ok) {
+                    totalBytes += bytesTransferred;
+                    const elapsedSec = (GLib.get_monotonic_time() - startTime) / 1000000;
+                    if (elapsedSec > 0.3) {
+                        const curMbps = ((totalBytes * 8) / 1000000 / elapsedSec).toFixed(1);
+                        onProgress(curMbps);
+                    }
+                }
+                const reqElapsedSec = (GLib.get_monotonic_time() - reqStart) / 1000000;
+                let nextIdx = idx;
+                if (!ok || reqElapsedSec > 2.5) nextIdx = idx - 1;
+                else if (reqElapsedSec < 0.7) nextIdx = idx + 1;
+                workerStep(nextIdx);
+            };
+
+            if (mode === 'download') {
+                const size = sizes[idx];
+                const msg = Soup.Message.new('GET', `https://${host}/speedtest/random${size}x${size}.jpg?x=${Math.random()}`);
+                if (!msg) {
+                    onReqDone(0, false);
+                    return;
+                }
+                msg.get_request_headers().append('User-Agent', BROWSER_UA);
+                session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, cancellable as any, (sess, res) => {
+                    let bytes = 0;
+                    let ok = false;
+                    try {
+                        const result = sess?.send_and_read_finish(res);
+                        if (result && msg.get_status() === Soup.Status.OK) {
+                            bytes = result.get_size();
+                            ok = true;
+                        }
+                    } catch (e) {}
+                    onReqDone(bytes, ok);
+                });
+            } else {
+                const size = sizes[idx];
+                const msg = Soup.Message.new('POST', `https://${host}/speedtest/upload.php`);
+                if (!msg || !uploadBuffer) {
+                    onReqDone(0, false);
+                    return;
+                }
+                msg.get_request_headers().append('User-Agent', BROWSER_UA);
+                msg.set_request_body_from_bytes('application/octet-stream', new GLib.Bytes(uploadBuffer.subarray(0, size)));
+                session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, cancellable as any, (sess, res) => {
+                    let ok = false;
+                    try {
+                        sess?.send_and_read_finish(res);
+                        ok = msg.get_status() === Soup.Status.OK;
+                    } catch (e) {}
+                    onReqDone(ok ? size : 0, ok);
+                });
+            }
+        };
+
+        for (let w = 0; w < concurrency; w++) {
+            workerStep(1);
+        }
+    }
+
     private _runFullSpeedTest(): void {
         if (this._isTestingSpeed) return;
         this._isTestingSpeed = true;
 
-        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('...');
-        if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('CONNECTING TO CLOUDFLARE EDGE...');
+        // Reset the speedtest cancellable so any previously-cancelled state
+        // doesn't silently abort the new test's Soup requests.
+        if (this._speedTestCancellable) {
+            this._speedTestCancellable.cancel();
+        }
+        this._speedTestCancellable = new Gio.Cancellable();
+
+        this._setSpeedTestDropdownOpen(false);
+        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('TESTING...');
+        if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('RESOLVING SERVER...');
         if (this._speedTestPingVal) this._speedTestPingVal.set_text('Testing...');
+        if (this._speedTestJitterVal) this._speedTestJitterVal.set_text('Testing...');
+        if (this._speedTestLossVal) this._speedTestLossVal.set_text('--');
         if (this._speedTestDownVal) this._speedTestDownVal.set_text('--');
         if (this._speedTestUpVal) this._speedTestUpVal.set_text('--');
 
-        // Step 1: Ping Test
-        // Parses both the "X% packet loss" summary line and the "rtt min/avg/max/mdev"
-        // line. We can't just split the rtt line on "/" and index into it, since the
-        // "min/avg/max/mdev" label itself contains slashes - split out the "= ..." value
-        // list first, then split that on "/".
-        const pingCmd = `ping -c 4 -w 3 1.1.1.1 2>/dev/null | awk '/packet loss/{for(i=1;i<=NF;i++) if ($i ~ /%$/) {loss=$i; gsub("%","",loss)}} /rtt/{split($0,p,"= "); split(p[2],v,"/"); avg=v[2]; jitter=v[4]} END{print loss "|" avg "|" jitter}'`;
-        this._spawnAsync(pingCmd, (stdout) => {
-            const parts = stdout.trim().split('|');
-            const lossVal = parts[0] && !isNaN(parseFloat(parts[0])) ? parseFloat(parts[0]) : null;
-            const avgPing = parts[1] && !isNaN(parseFloat(parts[1])) ? `${parseFloat(parts[1]).toFixed(0)} ms` : 'N/A';
-            const mdevPing = parts[2] && !isNaN(parseFloat(parts[2])) ? `${parseFloat(parts[2]).toFixed(1)} ms` : 'N/A';
-
-            if (this._speedTestPingVal) this._speedTestPingVal.set_text(avgPing);
-            if (this._speedTestJitterVal) this._speedTestJitterVal.set_text(mdevPing);
-            if (this._speedTestLossVal) this._speedTestLossVal.set_text(lossVal !== null ? `${Math.round(lossVal)}%` : 'N/A');
-
-            // Step 2: Download Speed Test (Soup 3)
-            if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING DOWNLOAD SPEED...');
-
-            const session = this._getSoupSession();
-            const downMsg = Soup.Message.new('GET', 'https://speed.cloudflare.com/__down?bytes=15000000');
-            const downStart = GLib.get_monotonic_time();
-
-            if (!downMsg) {
-                this._finishSpeedTest('0.0', '0.0', avgPing);
+        this._fetchOoklaServer((server) => {
+            if (!server) {
+                if (this._speedTestPingVal) this._speedTestPingVal.set_text('N/A');
+                if (this._speedTestJitterVal) this._speedTestJitterVal.set_text('N/A');
+                this._finishSpeedTest('0.0', '0.0', 'N/A');
                 return;
             }
 
-            session.send_and_read_async(
-                downMsg,
-                GLib.PRIORITY_DEFAULT,
-                this._soupCancellable as any,
-                (downSess, downRes) => {
-                    let downMbps = '0.0';
-                    try {
-                        const bytes = downSess?.send_and_read_finish(downRes);
-                        const downElapsedSec = (GLib.get_monotonic_time() - downStart) / 1000000;
-                        if (bytes && downElapsedSec > 0) {
-                            const totalBytes = bytes.get_size();
-                            downMbps = ((totalBytes * 8) / 1000000 / downElapsedSec).toFixed(1);
-                        }
-                    } catch (e) {}
+            if (this._speedTestServerSub) {
+                const loc = SPEEDTEST_LOCATIONS[this._speedTestLocationIndex].label;
+                const sponsor = server.sponsor || '';
+                const sName = server.name || '';
+                let text = loc;
+                if (sponsor && sName && sponsor !== sName) {
+                    text = `${sponsor} • ${sName}`;
+                } else if (sponsor || sName) {
+                    text = `${sponsor || sName} • ${loc}`;
+                }
+                this._speedTestServerSub.set_text(text);
+            }
 
+            if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING LATENCY...');
+
+            this._runOoklaLatencyTest(server.host, (avgPing, mdevPing, lossVal) => {
+                if (this._speedTestPingVal) this._speedTestPingVal.set_text(avgPing);
+                if (this._speedTestJitterVal) this._speedTestJitterVal.set_text(mdevPing);
+                if (this._speedTestLossVal) this._speedTestLossVal.set_text(lossVal !== null ? `${Math.round(lossVal)}%` : 'N/A');
+
+                if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING DOWNLOAD SPEED...');
+
+                this._runOoklaThroughputTest(server.host, 'download', 7000, 3, (curMbps) => {
+                    if (this._speedTestDownVal) {
+                        this._speedTestDownVal.set_text(curMbps);
+                    }
+                }, (downMbps) => {
                     if (this._speedTestDownVal) {
                         this._speedTestDownVal.set_text(downMbps === '0.0' ? '--' : downMbps);
                     }
 
-                    // Step 3: Upload Speed Test (Soup 3)
                     if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING UPLOAD SPEED...');
 
-                    const upMsg = Soup.Message.new('POST', 'https://speed.cloudflare.com/__up');
-                    if (!upMsg) {
-                        this._finishSpeedTest(downMbps, '0.0', avgPing);
-                        return;
-                    }
-
-                    const payloadSize = 2500000; // 2.5 MB payload
-                    const payload = new Uint8Array(payloadSize);
-                    upMsg.set_request_body_from_bytes('application/octet-stream', new GLib.Bytes(payload));
-
-                    const upStart = GLib.get_monotonic_time();
-                    session.send_and_read_async(
-                        upMsg,
-                        GLib.PRIORITY_DEFAULT,
-                        this._soupCancellable as any,
-                        (upSess, upRes) => {
-                            let upMbps = '0.0';
-                            try {
-                                upSess?.send_and_read_finish(upRes);
-                                const upElapsedSec = (GLib.get_monotonic_time() - upStart) / 1000000;
-                                if (upElapsedSec > 0 && upMsg.get_status() === Soup.Status.OK) {
-                                    upMbps = ((payloadSize * 8) / 1000000 / upElapsedSec).toFixed(1);
-                                }
-                            } catch (e) {}
-
-                            if (this._speedTestUpVal) {
-                                this._speedTestUpVal.set_text(upMbps === '0.0' ? '--' : upMbps);
-                            }
-
-                            this._finishSpeedTest(downMbps, upMbps, avgPing);
+                    this._runOoklaThroughputTest(server.host, 'upload', 6000, 3, (curMbps) => {
+                        if (this._speedTestUpVal) {
+                            this._speedTestUpVal.set_text(curMbps);
                         }
-                    );
-                }
-            );
+                    }, (upMbps) => {
+                        if (this._speedTestUpVal) {
+                            this._speedTestUpVal.set_text(upMbps === '0.0' ? '--' : upMbps);
+                        }
+
+                        this._finishSpeedTest(downMbps, upMbps, avgPing);
+                    });
+                });
+            });
         });
     }
 
     private _finishSpeedTest(downMbps: string, upMbps: string, avgPing: string): void {
         this._isTestingSpeed = false;
-        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('AGAIN');
+        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('RUN AGAIN');
 
         // Calculate Rating
         const dVal = parseFloat(downMbps) || 0;
@@ -1088,11 +1816,11 @@ export default class SpeedMeterExtension extends Extension {
      * Uses a lightweight parser to avoid large string allocations.
      */
     private _tick(): void {
-        if (!this._procFile || !this._downLabel || !this._upLabel) return;
+        if (!this._indicator || !this._procFile || !this._downLabel || !this._upLabel) return;
 
-        this._procFile.load_contents_async(null, (file, res) => {
+        this._procFile.load_contents_async(this._soupCancellable, (file, res) => {
             try {
-                if (!file) return;
+                if (!file || !this._indicator || !this._procFile || this._soupCancellable?.is_cancelled()) return;
                 const [ok, bytes] = file.load_contents_finish(res);
                 if (!ok || !bytes) return;
 
@@ -1270,6 +1998,22 @@ export default class SpeedMeterExtension extends Extension {
             this._settingsChangedId = 0;
         }
 
+        if (this._interfaceSettings && this._colorSchemeChangedId) {
+            this._interfaceSettings.disconnect(this._colorSchemeChangedId);
+            this._colorSchemeChangedId = 0;
+        }
+        if (this._interfaceSettings && this._gtkThemeChangedId) {
+            this._interfaceSettings.disconnect(this._gtkThemeChangedId);
+            this._gtkThemeChangedId = 0;
+        }
+        if (this._interfaceSettings && this._accentColorChangedId) {
+            this._interfaceSettings.disconnect(this._accentColorChangedId);
+            this._accentColorChangedId = 0;
+        }
+        this._interfaceSettings = null;
+        this._currentAccentClass = '';
+        this._hasAccentColorKey = false;
+
         if (this._soupCancellable) {
             this._soupCancellable.cancel();
             this._soupCancellable = null;
@@ -1279,10 +2023,39 @@ export default class SpeedMeterExtension extends Extension {
             this._soupSession.abort();
             this._soupSession = null;
         }
+
+        if (this._speedTestCancellable) {
+            this._speedTestCancellable.cancel();
+            this._speedTestCancellable = null;
+        }
+
+        if (this._speedTestSession) {
+            this._speedTestSession.abort();
+            this._speedTestSession = null;
+        }
         this._statsManager?.saveSync();
 
         this._activityGraph?.destroy();
         this._activityGraph = null;
+
+        for (const item of this._speedTestDropdownItems) {
+            if (item.clickId) {
+                try { item.btn.disconnect(item.clickId); } catch (e) {}
+            }
+            item.btn.destroy();
+        }
+        this._speedTestDropdownItems = [];
+
+        if (this._speedTestDropdownBtn && this._speedTestDropdownBtnId) {
+            try { this._speedTestDropdownBtn.disconnect(this._speedTestDropdownBtnId); } catch (e) {}
+            this._speedTestDropdownBtnId = 0;
+        }
+        this._speedTestDropdownBtn?.destroy();
+        this._speedTestDropdownBtn = null;
+        this._speedTestDropdownArrow?.destroy();
+        this._speedTestDropdownArrow = null;
+        this._speedTestDropdownScroll?.destroy();
+        this._speedTestDropdownScroll = null;
 
         this._speedTestPanelItem?.destroy();
         this._speedTestPanelItem = null;
@@ -1295,6 +2068,15 @@ export default class SpeedMeterExtension extends Extension {
 
         this._actionsItem?.destroy();
         this._actionsItem = null;
+
+        this._dashboardBox?.destroy();
+        this._dashboardBox = null;
+
+        this._statsBox?.destroy();
+        this._statsBox = null;
+
+        this._actionsBox?.destroy();
+        this._actionsBox = null;
 
         this._activeAppLabel?.destroy();
         this._activeAppLabel = null;
@@ -1331,6 +2113,9 @@ export default class SpeedMeterExtension extends Extension {
 
         this._speedTestLossVal?.destroy();
         this._speedTestLossVal = null;
+
+        this._speedTestServerSub?.destroy();
+        this._speedTestServerSub = null;
 
         this._downLabel?.destroy();
         this._downLabel = null;
