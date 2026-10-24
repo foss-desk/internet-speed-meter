@@ -8,6 +8,7 @@
 
 import '@girs/gjs/ambient';
 import '@girs/gnome-shell/ambient';
+import '@girs/soup-3.0/ambient';
 
 declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
     export class PopupMenu extends GObject.Object {

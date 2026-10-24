@@ -7,6 +7,9 @@ venv
 dist/
 *.zip
 
+# Local agent context (not for the repo)
+CLAUDE.md
+
 # Editor / IDE
 .vscode/
 .idea/

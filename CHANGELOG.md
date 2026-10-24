@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.6] - 2026-10-24
+
+### Changed
+- Replaced the fake single-request Cloudflare speedtest with a real Ookla (speedtest.net) implementation: resolves a live server via Ookla's public server-list API, biased toward a region the user picks from a new server selector (Auto/Nearest plus eleven real-world locations across North/South America, Europe, the Middle East, Asia, and Oceania), then measures latency/jitter/loss, download, and upload against that exact server using Ookla's standard HTTP protocol (`latency.txt`, `random{N}x{N}.jpg`, `upload.php`).
+- Download and upload now use 4 parallel request streams with adaptive chunk sizing (each stream grows/shrinks its chunk size based on how long the previous request took, keeping requests in a ~0.8-3s window) instead of one single-threaded request — the old approach under-reported speed on fast/high-latency links because a lone TCP stream can't saturate the connection.
+- Speedtest transfers now use a dedicated Soup session with a longer timeout than the general-purpose one used for quick lookups, so slower connections no longer have in-flight download/upload chunks silently aborted mid-test.
+
+### Removed
+- Dropped the ICMP `ping` subprocess for latency; it's now measured over HTTP against the same Ookla server used for the download/upload legs, which is also more accurate (the old ping target was an unrelated fixed host, not the server actually being tested against).
+
+### Added
+- The panel indicator and popup menu now follow the system's chosen accent color (`org.gnome.desktop.interface accent-color`, GNOME 46+) for the active-app tracker pill and the active graph tab, reacting live to changes; older GNOME versions without that key keep the extension's original blue branding. The Ookla speedtest panel and the download/upload gauge colors are unaffected by design, same as they're unaffected by light/dark mode.
+
+### Fixed
+- The panel indicator and popup menu (dashboard cards, stats card, action buttons, tabs) hardcoded light-colored text/tints meant for the shell's usual dark panel/popup chrome, so they became unreadable under a light system color scheme. The extension now detects `org.gnome.desktop.interface color-scheme` and toggles an explicit `light-mode`/`dark-mode` class pair (reacting live to changes) that re-themes those surfaces. The Speedtest panel and activity graph keep their own fixed dark backdrop in both modes by design, so they're unaffected.
+- The new Ookla server-probe/download/upload loops read `this._speedTestCancellable` fresh on every request instead of capturing it once; `disable()` cancels that cancellable and then nulls the field, so a speedtest left running across a disable would silently stop noticing the cancellation and keep firing requests against an already-aborted Soup session. Each test routine now captures the cancellable once per run.
+- `disable()` relied on destroying the top-level panel indicator to cascade-destroy every menu widget, instead of destroying each one explicitly as the rest of the file does; restored explicit `.destroy()` calls for all dashboard/stats/actions containers and the new server-dropdown widgets, and tracked the Ookla server-probe's safety timeout so it's removed as soon as probing finishes instead of being left to fire on its own.
+
+## [1.4.5] - 2026-10-24
+
+### Added
+- Added `51` to `shell-version` in `metadata.json` — GNOME Shell 51 is confirmed stable.
+
+### Fixed
+- Replaced the removed `St` widget `vertical` boolean (dropped in GNOME Shell 51, deprecated since 48) with `orientation: Clutter.Orientation.VERTICAL/HORIZONTAL` across all `St.BoxLayout` instances in `extension.ts`, so the panel menu and speedtest panel still lay out correctly on GNOME Shell 51.
+
+## [1.4.4] - 2026-10-24
+
+### Fixed
+- Speedtest "LOSS" metric was hardcoded to `0%` and never reflected real packet loss; it is now parsed from `ping`'s actual statistics output.
+- Speedtest "JITTER" metric was accidentally displaying the max RTT instead of `mdev` (jitter), due to an incorrect field index when splitting `ping`'s `rtt min/avg/max/mdev` summary line on `/`.
+- Monthly data-quota notifications (80%/100%) stopped firing after the first time they were triggered, because the notified-state flags were never reset on a new calendar month.
+- Preferences "Monthly Application Traffic" list and "Export CSV" button read `StatsManager` history before its asynchronous disk load had completed, so they almost always operated on empty/stale data. Both now await the load before reading.
+
+### Changed
+- Added a `make logs` target to stream GNOME Shell logs filtered for this extension, matching the command already documented in `README.md`.
+
+## [1.4.3] - 2026-10-11
+
+### Changed
+- Replaced subprocess `curl`/`wget`/`python3` network operations with native Libsoup 3 (`Soup.Session`) for public IP retrieval and Cloudflare speed test measurements per GNOME Shell extension review guidelines.
+
+### Fixed
+- Added robust `Gio.Cancellable` and `Soup.Session` abort handling during `disable()` to prevent memory leaks and dangling async network callbacks.
+
 ## [1.4.2] - 2026-10-11
 
 ### Changed

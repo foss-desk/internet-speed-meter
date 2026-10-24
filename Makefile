@@ -21,7 +21,7 @@ SCHEMA_DIR := $(DIST_DIR)/schemas
 # Toolchain (overridable via environment or command-line arguments)
 SHEXLI     ?= $(shell command -v shexli 2>/dev/null || (test -x $(HOME)/.local/bin/shexli && echo $(HOME)/.local/bin/shexli))
 
-.PHONY: all build install pack test uninstall clean
+.PHONY: all build install pack test uninstall clean logs
 
 # ─── Default ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +72,12 @@ test: install
 	@sleep 3
 	@gnome-extensions enable $(UUID)
 	@echo "✔ Extension enabled in nested session"
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+
+logs:
+	@echo "▸ Streaming GNOME Shell logs (filtered for $(UUID))…"
+	@journalctl -f -o cat | grep --line-buffered -i "speed-meter\|speed meter"
 
 # ─── Uninstall ────────────────────────────────────────────────────────────────
 

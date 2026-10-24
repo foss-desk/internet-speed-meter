@@ -186,9 +186,10 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
             cssClasses: ['suggested-action'],
             valign: Gtk.Align.CENTER,
         });
-        exportBtn.connect('clicked', () => {
+        exportBtn.connect('clicked', async () => {
             try {
                 const statsMgr = new StatsManager(this.path);
+                await statsMgr.ready();
                 const csvData = statsMgr.exportToCsv();
                 const homeDir = GLib.get_home_dir();
                 const exportPath = GLib.build_filenamev([homeDir, 'speed-meter-stats.csv']);
@@ -228,6 +229,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
         try {
             const statsMgr = new StatsManager(this.path);
+            await statsMgr.ready();
             const appList = statsMgr.getMonthlyAppUsage();
 
             if (appList.length === 0) {
