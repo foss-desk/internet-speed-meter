@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2026-10-24
+
+### Added
+- Added `51` to `shell-version` in `metadata.json` — GNOME Shell 51 is confirmed stable.
+
+### Fixed
+- Replaced the removed `St` widget `vertical` boolean (dropped in GNOME Shell 51, deprecated since 48) with `orientation: Clutter.Orientation.VERTICAL/HORIZONTAL` across all `St.BoxLayout` instances in `extension.ts`, so the panel menu and speedtest panel still lay out correctly on GNOME Shell 51.
+
+## [1.4.4] - 2026-10-24
+
+### Fixed
+- Speedtest "LOSS" metric was hardcoded to `0%` and never reflected real packet loss; it is now parsed from `ping`'s actual statistics output.
+- Speedtest "JITTER" metric was accidentally displaying the max RTT instead of `mdev` (jitter), due to an incorrect field index when splitting `ping`'s `rtt min/avg/max/mdev` summary line on `/`.
+- Monthly data-quota notifications (80%/100%) stopped firing after the first time they were triggered, because the notified-state flags were never reset on a new calendar month.
+- Preferences "Monthly Application Traffic" list and "Export CSV" button read `StatsManager` history before its asynchronous disk load had completed, so they almost always operated on empty/stale data. Both now await the load before reading.
+
+### Changed
+- Added a `make logs` target to stream GNOME Shell logs filtered for this extension, matching the command already documented in `README.md`.
+
 ## [1.4.3] - 2026-10-11
 
 ### Changed

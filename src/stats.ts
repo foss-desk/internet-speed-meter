@@ -25,11 +25,25 @@ export class StatsManager {
     private _loaded: boolean = false;
     private _pendingUpdates: TrafficData[] = [];
     private _saving: boolean = false;
+    private _loadedPromise: Promise<void>;
+    private _resolveLoaded: () => void = () => {};
 
     constructor(cacheDir: string) {
         const path = GLib.build_filenamev([cacheDir, 'stats.json']);
         this._file = Gio.File.new_for_path(path);
+        this._loadedPromise = new Promise((resolve) => {
+            this._resolveLoaded = resolve;
+        });
         this._loadAsync();
+    }
+
+    /**
+     * Resolves once the on-disk history has finished loading (or failed to load).
+     * Callers that read history right after construction (e.g. prefs.ts) must await
+     * this first, since the constructor only kicks off an async file read.
+     */
+    ready(): Promise<void> {
+        return this._loadedPromise;
     }
 
     private _loadAsync(): void {
@@ -61,6 +75,7 @@ export class StatsManager {
             } finally {
                 this._loaded = true;
                 this._flushPendingUpdates();
+                this._resolveLoaded();
             }
         });
     }

@@ -65,6 +65,7 @@ export default class SpeedMeterExtension extends Extension {
     private _speedTestUpVal: St.Label | null = null;
     private _speedTestPingVal: St.Label | null = null;
     private _speedTestJitterVal: St.Label | null = null;
+    private _speedTestLossVal: St.Label | null = null;
     private _speedTestQualityVal: St.Label | null = null;
     private _speedTestRunBtnLabel: St.Label | null = null;
     private _isTestingSpeed: boolean = false;
@@ -88,6 +89,7 @@ export default class SpeedMeterExtension extends Extension {
     private _isOnBattery: boolean = false;
     private _notifiedQuota80: boolean = false;
     private _notifiedQuota100: boolean = false;
+    private _notifiedQuotaMonth: string = '';
 
     private _settingsChangedId: number = 0;
     private _menuOpenStateId: number = 0;
@@ -95,6 +97,8 @@ export default class SpeedMeterExtension extends Extension {
     private _lastUpText: string = '';
 
     private _statsSectionItem: PopupMenu.PopupBaseMenuItem | null = null;
+    private _dashboardItem: PopupMenu.PopupBaseMenuItem | null = null;
+    private _actionsItem: PopupMenu.PopupBaseMenuItem | null = null;
     private _statToday: StatRowWidgets | null = null;
     private _statThisMonth: StatRowWidgets | null = null;
     private _statLastMonth: StatRowWidgets | null = null;
@@ -135,7 +139,7 @@ export default class SpeedMeterExtension extends Extension {
 
         this._box = new St.BoxLayout({
             style_class: 'speed-meter-box',
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             y_align: Clutter.ActorAlign.CENTER,
         });
 
@@ -187,25 +191,25 @@ export default class SpeedMeterExtension extends Extension {
 
         // --- DASHBOARD SECTION (Grid + Graph) ---
         const dashboardBox = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             style_class: 'speed-meter-dashboard'
         });
 
         const headerBox = new St.BoxLayout({ 
-            vertical: true, 
+            orientation: Clutter.Orientation.VERTICAL, 
             style_class: 'speed-meter-dashboard-header' 
         });
         
         // 2x2 Grid for Network Info
-        const infoGrid = new St.BoxLayout({ vertical: true, style_class: 'speed-meter-network-info-grid' });
+        const infoGrid = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, style_class: 'speed-meter-network-info-grid' });
         
-        const row1 = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-network-row' });
+        const row1 = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-network-row' });
         const ifaceRow = this._createInfoCard('network-wired-symbolic', 'Connection');
         const vpnRow = this._createInfoCard('network-vpn-symbolic', 'VPN Tunnel');
         row1.add_child(ifaceRow.container);
         row1.add_child(vpnRow.container);
 
-        const row2 = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-network-row' });
+        const row2 = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-network-row' });
         const ipRow = this._createInfoCard('network-transmit-receive-symbolic', 'Local IP');
         const publicIpRow = this._createInfoCard('globe-symbolic', 'Public IP');
         row2.add_child(ipRow.container);
@@ -221,7 +225,7 @@ export default class SpeedMeterExtension extends Extension {
 
         // Active Application Pill Bar
         const appTrackerBar = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
             style_class: 'speed-meter-app-tracker-bar'
         });
@@ -248,13 +252,13 @@ export default class SpeedMeterExtension extends Extension {
 
         // Integrated Graph with Segmented Tab Bar
         const graphWrapper = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             style_class: 'speed-meter-graph-container'
         });
 
         // Tab Switcher Row
         const tabsBar = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
             style_class: 'speed-meter-tabs-bar'
         });
@@ -287,9 +291,9 @@ export default class SpeedMeterExtension extends Extension {
         graphWrapper.add_child(this._activityGraph);
         dashboardBox.add_child(graphWrapper);
 
-        const dashboardItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-        dashboardItem.add_child(dashboardBox);
-        (this._indicator.menu as any).addMenuItem(dashboardItem);
+        this._dashboardItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        this._dashboardItem.add_child(dashboardBox);
+        (this._indicator.menu as any).addMenuItem(this._dashboardItem);
 
         // Dedicated Speedtest Panel View Item
         this._speedTestPanelItem = this._buildSpeedTestPanel();
@@ -297,7 +301,7 @@ export default class SpeedMeterExtension extends Extension {
 
         // --- STATS SECTION (Single Unified Card) ---
         const statsBox = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             style_class: 'speed-meter-stats-card',
         });
@@ -327,7 +331,7 @@ export default class SpeedMeterExtension extends Extension {
         // Action Buttons Row (Reset, Speedtest, Settings)
         const actionsBox = new St.BoxLayout({
             style_class: 'speed-meter-actions-bar',
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
         });
 
@@ -341,13 +345,9 @@ export default class SpeedMeterExtension extends Extension {
         const { button: speedtestBtn } = this._createButtonWithIcon('network-wireless-signal-excellent-symbolic', 'Speedtest', 'speed-meter-button speed-meter-speedtest-btn');
         speedtestBtn.connect('clicked', () => {
             if (this._speedTestPanelItem) {
-                const isVisible = (this._speedTestPanelItem as any).visible;
-                const showSpeedtest = !isVisible;
-                (this._speedTestPanelItem as any).visible = showSpeedtest;
-                this._setStatsVisible(!showSpeedtest);
-                if (showSpeedtest) {
-                    this._runFullSpeedTest();
-                }
+                (this._speedTestPanelItem as any).visible = true;
+                this._setDefaultViewVisible(false);
+                this._runFullSpeedTest();
             }
         });
 
@@ -360,9 +360,9 @@ export default class SpeedMeterExtension extends Extension {
         actionsBox.add_child(speedtestBtn);
         actionsBox.add_child(settingsBtn);
 
-        const actionsItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-        actionsItem.add_child(actionsBox);
-        (this._indicator.menu as any).addMenuItem(actionsItem);
+        this._actionsItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        this._actionsItem.add_child(actionsBox);
+        (this._indicator.menu as any).addMenuItem(this._actionsItem);
 
         // Update network info only when menu opens
         this._menuOpenStateId = (this._indicator.menu as any).connect('open-state-changed', (_menu: any, open: boolean) => {
@@ -372,14 +372,16 @@ export default class SpeedMeterExtension extends Extension {
         this._updateMenu();
     }
 
-    private _setStatsVisible(visible: boolean): void {
+    private _setDefaultViewVisible(visible: boolean): void {
+        if (this._dashboardItem) (this._dashboardItem as any).visible = visible;
         if (this._statsSectionItem) (this._statsSectionItem as any).visible = visible;
+        if (this._actionsItem) (this._actionsItem as any).visible = visible;
     }
 
     private _createInfoCard(iconName: string, labelText: string): { container: St.BoxLayout, value: St.Label } {
-        const container = new St.BoxLayout({ style_class: 'speed-meter-info-card', vertical: true, x_expand: true });
+        const container = new St.BoxLayout({ style_class: 'speed-meter-info-card', orientation: Clutter.Orientation.VERTICAL, x_expand: true });
         
-        const topRow = new St.BoxLayout({ style_class: 'speed-meter-info-badge-row', vertical: false });
+        const topRow = new St.BoxLayout({ style_class: 'speed-meter-info-badge-row', orientation: Clutter.Orientation.HORIZONTAL });
         const icon = new St.Icon({ icon_name: iconName, style_class: 'speed-meter-info-icon' });
         const label = new St.Label({ text: labelText, style_class: 'speed-meter-info-label' });
         topRow.add_child(icon);
@@ -395,7 +397,7 @@ export default class SpeedMeterExtension extends Extension {
 
     private _createButtonWithIcon(iconName: string, labelText: string, styleClass: string): { button: St.Button, label: St.Label } {
         const box = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'speed-meter-button-content',
         });
         const icon = new St.Icon({
@@ -419,7 +421,7 @@ export default class SpeedMeterExtension extends Extension {
 
     private _createTabButton(iconName: string, labelText: string, isActive: boolean): St.Button {
         const box = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             style_class: 'speed-meter-tab-content',
         });
         const icon = new St.Icon({
@@ -451,13 +453,13 @@ export default class SpeedMeterExtension extends Extension {
 
     private _createStatRow(label: string, dotColor: string = '#3584e4'): { container: St.BoxLayout, widgets: StatRowWidgets } {
         const container = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
             style_class: 'speed-meter-stat-row',
         });
 
         const leftBox = new St.BoxLayout({
-            vertical: false,
+            orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
             style_class: 'speed-meter-stat-left',
@@ -476,7 +478,7 @@ export default class SpeedMeterExtension extends Extension {
         leftBox.add_child(titleLabel);
 
         const rightBox = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_align: Clutter.ActorAlign.END,
             y_align: Clutter.ActorAlign.CENTER,
             style_class: 'speed-meter-stat-right',
@@ -701,11 +703,11 @@ export default class SpeedMeterExtension extends Extension {
 
     private _buildSpeedTestPanel(): PopupMenu.PopupBaseMenuItem {
         const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-ookla-panel' });
-        const container = new St.BoxLayout({ vertical: true, x_expand: true, style_class: 'speed-meter-ookla-box' });
+        const container = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-box' });
 
         // Header: Speedtest Brand + Server + Close button
-        const header = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-ookla-header' });
-        const brandBox = new St.BoxLayout({ vertical: true, x_expand: true });
+        const header = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-header' });
+        const brandBox = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true });
         const brandTitle = new St.Label({ text: 'SPEEDTEST', style_class: 'speed-meter-ookla-brand' });
         const serverSub = new St.Label({ text: 'Cloudflare Edge CDN • Auto Optimal', style_class: 'speed-meter-ookla-server' });
         brandBox.add_child(brandTitle);
@@ -718,7 +720,7 @@ export default class SpeedMeterExtension extends Extension {
         closeBtn.connect('clicked', () => {
             if (this._speedTestPanelItem) {
                 this._speedTestPanelItem.visible = false;
-                this._setStatsVisible(true);
+                this._setDefaultViewVisible(true);
             }
         });
 
@@ -726,23 +728,24 @@ export default class SpeedMeterExtension extends Extension {
         header.add_child(closeBtn);
 
         // Ping Strip: PING | JITTER | LOSS
-        const pingStrip = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-ookla-ping-strip' });
+        const pingStrip = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-ping-strip' });
         const pingBox = this._createOoklaPingMetric('PING', '-- ms');
         const jitterBox = this._createOoklaPingMetric('JITTER', '-- ms');
         const lossBox = this._createOoklaPingMetric('LOSS', '0%');
 
         this._speedTestPingVal = pingBox.valueLabel;
         this._speedTestJitterVal = jitterBox.valueLabel;
+        this._speedTestLossVal = lossBox.valueLabel;
 
         pingStrip.add_child(pingBox.container);
         pingStrip.add_child(jitterBox.container);
         pingStrip.add_child(lossBox.container);
 
         // Ookla Speed Gauges Row (Side-by-side Download & Upload)
-        const gaugesRow = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-ookla-gauges-row' });
+        const gaugesRow = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-gauges-row' });
 
         // Download Gauge Card
-        const downCard = new St.BoxLayout({ vertical: true, x_expand: true, style_class: 'speed-meter-ookla-gauge-card speed-meter-down-card' });
+        const downCard = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-gauge-card speed-meter-down-card' });
         const downHeader = new St.Label({ text: '\u2193 DOWNLOAD', style_class: 'speed-meter-ookla-gauge-title speed-meter-down-title' });
         this._speedTestDownVal = new St.Label({ text: '--', style_class: 'speed-meter-ookla-gauge-value speed-meter-down-value' });
         const downUnit = new St.Label({ text: 'Mbps', style_class: 'speed-meter-ookla-gauge-unit' });
@@ -751,7 +754,7 @@ export default class SpeedMeterExtension extends Extension {
         downCard.add_child(downUnit);
 
         // Upload Gauge Card
-        const upCard = new St.BoxLayout({ vertical: true, x_expand: true, style_class: 'speed-meter-ookla-gauge-card speed-meter-up-card' });
+        const upCard = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-gauge-card speed-meter-up-card' });
         const upHeader = new St.Label({ text: '\u2191 UPLOAD', style_class: 'speed-meter-ookla-gauge-title speed-meter-up-title' });
         this._speedTestUpVal = new St.Label({ text: '--', style_class: 'speed-meter-ookla-gauge-value speed-meter-up-value' });
         const upUnit = new St.Label({ text: 'Mbps', style_class: 'speed-meter-ookla-gauge-unit' });
@@ -763,12 +766,12 @@ export default class SpeedMeterExtension extends Extension {
         gaugesRow.add_child(upCard);
 
         // Status & Rating Banner
-        const statusBox = new St.BoxLayout({ vertical: true, x_expand: true, style_class: 'speed-meter-ookla-status-box' });
+        const statusBox = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-status-box' });
         this._speedTestQualityVal = new St.Label({ text: 'Press GO to start speed test', style_class: 'speed-meter-ookla-status-text' });
         statusBox.add_child(this._speedTestQualityVal);
 
         // Iconic Ookla Big "GO" Button
-        const goBtnRow = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'speed-meter-ookla-go-row' });
+        const goBtnRow = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-ookla-go-row' });
         const goBtn = new St.Button({
             style_class: 'speed-meter-ookla-go-button',
             x_expand: true,
@@ -793,7 +796,7 @@ export default class SpeedMeterExtension extends Extension {
     }
 
     private _createOoklaPingMetric(title: string, initVal: string): { container: St.BoxLayout, valueLabel: St.Label } {
-        const container = new St.BoxLayout({ vertical: true, x_expand: true, style_class: 'speed-meter-ookla-ping-item' });
+        const container = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-ping-item' });
         const lbl = new St.Label({ text: title, style_class: 'speed-meter-ookla-ping-lbl' });
         const valueLabel = new St.Label({ text: initVal, style_class: 'speed-meter-ookla-ping-val' });
         container.add_child(lbl);
@@ -822,14 +825,20 @@ export default class SpeedMeterExtension extends Extension {
         if (this._speedTestUpVal) this._speedTestUpVal.set_text('--');
 
         // Step 1: Ping Test
-        const pingCmd = `ping -c 4 -w 3 1.1.1.1 2>/dev/null | awk -F"/" 'END {print $5 "|" $6}'`;
+        // Parses both the "X% packet loss" summary line and the "rtt min/avg/max/mdev"
+        // line. We can't just split the rtt line on "/" and index into it, since the
+        // "min/avg/max/mdev" label itself contains slashes - split out the "= ..." value
+        // list first, then split that on "/".
+        const pingCmd = `ping -c 4 -w 3 1.1.1.1 2>/dev/null | awk '/packet loss/{for(i=1;i<=NF;i++) if ($i ~ /%$/) {loss=$i; gsub("%","",loss)}} /rtt/{split($0,p,"= "); split(p[2],v,"/"); avg=v[2]; jitter=v[4]} END{print loss "|" avg "|" jitter}'`;
         this._spawnAsync(pingCmd, (stdout) => {
             const parts = stdout.trim().split('|');
-            const avgPing = parts[0] && !isNaN(parseFloat(parts[0])) ? `${parseFloat(parts[0]).toFixed(0)} ms` : 'N/A';
-            const mdevPing = parts[1] && !isNaN(parseFloat(parts[1])) ? `${parseFloat(parts[1]).toFixed(1)} ms` : 'N/A';
+            const lossVal = parts[0] && !isNaN(parseFloat(parts[0])) ? parseFloat(parts[0]) : null;
+            const avgPing = parts[1] && !isNaN(parseFloat(parts[1])) ? `${parseFloat(parts[1]).toFixed(0)} ms` : 'N/A';
+            const mdevPing = parts[2] && !isNaN(parseFloat(parts[2])) ? `${parseFloat(parts[2]).toFixed(1)} ms` : 'N/A';
 
             if (this._speedTestPingVal) this._speedTestPingVal.set_text(avgPing);
             if (this._speedTestJitterVal) this._speedTestJitterVal.set_text(mdevPing);
+            if (this._speedTestLossVal) this._speedTestLossVal.set_text(lossVal !== null ? `${Math.round(lossVal)}%` : 'N/A');
 
             // Step 2: Download Speed Test (Soup 3)
             if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING DOWNLOAD SPEED...');
@@ -957,6 +966,12 @@ export default class SpeedMeterExtension extends Extension {
         if (bytes >= MB) return `${(bytes / MB).toFixed(2)} MB`;
         if (bytes >= KB) return `${(bytes / KB).toFixed(1)} KB`;
         return `${Math.round(bytes)} B`;
+    }
+
+    private _getMonthKey(date: Date): string {
+        const y = date.getFullYear();
+        const m = date.getMonth() + 1;
+        return `${y}-${m < 10 ? '0' + m : m}`;
     }
 
     private _checkBatteryStatus(): void {
@@ -1194,6 +1209,16 @@ export default class SpeedMeterExtension extends Extension {
 
     private _checkQuota(): void {
         if (this._dataQuotaGb <= 0 || !this._statsManager) return;
+
+        // Reset the notified flags on a new calendar month, otherwise quota warnings
+        // would only ever fire once for the lifetime of the extension instance.
+        const monthKey = this._getMonthKey(new Date());
+        if (this._notifiedQuotaMonth !== monthKey) {
+            this._notifiedQuotaMonth = monthKey;
+            this._notifiedQuota80 = false;
+            this._notifiedQuota100 = false;
+        }
+
         const thisMonth = this._statsManager.getThisMonth();
         const usedBytes = thisMonth.rx + thisMonth.tx;
         const quotaBytes = this._dataQuotaGb * GB;
@@ -1265,6 +1290,12 @@ export default class SpeedMeterExtension extends Extension {
         this._statsSectionItem?.destroy();
         this._statsSectionItem = null;
 
+        this._dashboardItem?.destroy();
+        this._dashboardItem = null;
+
+        this._actionsItem?.destroy();
+        this._actionsItem = null;
+
         this._activeAppLabel?.destroy();
         this._activeAppLabel = null;
 
@@ -1297,6 +1328,9 @@ export default class SpeedMeterExtension extends Extension {
 
         this._speedTestJitterVal?.destroy();
         this._speedTestJitterVal = null;
+
+        this._speedTestLossVal?.destroy();
+        this._speedTestLossVal = null;
 
         this._downLabel?.destroy();
         this._downLabel = null;
