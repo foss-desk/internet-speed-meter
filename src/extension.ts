@@ -26,7 +26,7 @@ const Kb = 1000;
 const Mb = Kb * 1000;
 
 const UTF8_DECODER = new TextDecoder('utf-8');
-const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
+const USER_AGENT = 'internet-speed-meter (GNOME Shell extension; +https://github.com/foss-desk/internet-speed-meter)';
 
 interface StatRowWidgets {
     valueLabel: St.Label;
@@ -79,6 +79,8 @@ export default class SpeedMeterExtension extends Extension {
     private _hasPrevStats: boolean = false;
     private _timeoutId: number = 0;
     private _saveTimeoutId: number = 0;
+    // Speedtest-local timeouts, tracked so disable() can remove any still pending.
+    private _speedTestSourceIds: Set<number> = new Set();
     private _indicator: PanelMenu.Button | null = null;
     private _box: St.BoxLayout | null = null;
     private _downLabel: St.Label | null = null;
@@ -104,7 +106,6 @@ export default class SpeedMeterExtension extends Extension {
     private _speedTestRunBtnLabel: St.Label | null = null;
     private _speedTestServerSub: St.Label | null = null;
     private _speedTestDropdownBtn: St.Button | null = null;
-    private _speedTestDropdownBtnId: number = 0;
     private _speedTestDropdownArrow: St.Icon | null = null;
     private _speedTestDropdownScroll: St.ScrollView | null = null;
     private _speedTestDropdownItems: { btn: St.Button; check: St.Icon; clickId: number }[] = [];
@@ -141,8 +142,7 @@ export default class SpeedMeterExtension extends Extension {
     private _settingsChangedId: number = 0;
     private _menuOpenStateId: number = 0;
     private _interfaceSettings: Gio.Settings | null = null;
-    private _colorSchemeChangedId: number = 0;
-    private _gtkThemeChangedId: number = 0;
+    private _menuStyleChangedId: number = 0;
     private _accentColorChangedId: number = 0;
     private _currentAccentClass: string = '';
     private _hasAccentColorKey: boolean = false;
@@ -176,16 +176,6 @@ export default class SpeedMeterExtension extends Extension {
 
         try {
             this._interfaceSettings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
-            // _isLightMode() keys off "gtk-theme" (see its comment for why),
-            // but "color-scheme" still changes alongside it on every system
-            // that flips both together, so listen to both and just re-run
-            // the same no-op-safe apply either way.
-            this._colorSchemeChangedId = this._interfaceSettings.connect('changed::color-scheme', () => {
-                this._applyColorScheme();
-            });
-            this._gtkThemeChangedId = this._interfaceSettings.connect('changed::gtk-theme', () => {
-                this._applyColorScheme();
-            });
             // 'accent-color' only exists on GNOME 46+'s interface schema; older
             // shells simply won't have the key, so every read/connect of it is
             // guarded behind this one cached check.
@@ -200,7 +190,7 @@ export default class SpeedMeterExtension extends Extension {
             this._hasAccentColorKey = false;
         }
 
-        this._statsManager = new StatsManager(this.path);
+        this._statsManager = new StatsManager();
         this._settings = this.getSettings();
         this._loadSettings();
         this._checkBatteryStatus();
@@ -456,49 +446,30 @@ export default class SpeedMeterExtension extends Extension {
             if (open) this._updateNetworkInfo();
         });
 
+        // Re-check whenever the shell restyles the popup (theme reload on light/dark switch).
+        this._menuStyleChangedId = (this._indicator.menu as any).box.connect('style-changed', () => this._applyColorScheme());
+
         this._applyColorScheme();
         this._applyAccentColor();
         this._updateMenu();
     }
 
-    // Most of this extension's UI hardcodes light-colored text/tints meant to
-    // sit on the shell's normal dark panel/popup chrome. When the actual
-    // shell theme renders a light panel/popup instead, that text becomes
-    // unreadable against the resulting light background. The Speedtest
-    // panel and activity graph supply their own fixed dark backdrop
-    // regardless of theme, so they're deliberately left alone - see the
-    // ".light-mode"/".dark-mode" rules in stylesheet.css for what's covered.
-    //
-    // This can't just read "color-scheme" (prefer-light/prefer-dark/default):
-    // stock GNOME Shell's bundled Adwaita theme keeps the panel/popup chrome
-    // dark regardless of that app-level preference, but Ubuntu's Yaru shell
-    // theme does NOT follow color-scheme for the shell chrome - it follows
-    // which theme directory is actually loaded ("Yaru" vs "Yaru-dark" /
-    // "Yaru-<accent>-dark", named by "gtk-theme"), and Ubuntu's "Standard"
-    // appearance option sets color-scheme to "default" while still loading
-    // the *light* "Yaru" shell theme (white popup-menu-content, #222 text).
-    // Treating "default" as dark (the old behavior) left Ubuntu's default
-    // "Standard" users with illegible light-on-light text. So: trust the
-    // "-dark" suffix convention on "gtk-theme" whenever a real theme is
-    // installed, and only fall back to always-dark for stock Adwaita, which
-    // has no such light/dark split to detect.
-    private _isLightMode(): boolean {
+    // The shell's light/dark decision depends on the session mode (stock GNOME
+    // prefers dark, Ubuntu prefers light), color-scheme, high contrast and any
+    // custom theme. So rather than re-deriving that from gsettings, read the text
+    // color the theme actually gives the popup: dark text means a light background.
+    private _hasDarkText(actor: St.Widget | null | undefined): boolean {
         try {
-            const scheme = this._interfaceSettings?.get_string('color-scheme');
-            if (scheme === 'prefer-dark') return false;
-            if (scheme === 'prefer-light') return true;
-
-            const gtkTheme = this._interfaceSettings?.get_string('gtk-theme') ?? '';
-            if (/-dark$/i.test(gtkTheme)) return false;
-            if (/light/i.test(gtkTheme)) return true;
-
-            // In Ubuntu & stock GNOME, default appearance with 'Yaru' or 'Adwaita' is light
-            if (gtkTheme.startsWith('Yaru') || gtkTheme === 'Adwaita') return true;
-
-            return false;
+            if (!actor?.get_stage()) return false;
+            const c = actor.get_theme_node().get_foreground_color();
+            return 0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue < 128;
         } catch (e) {
             return false;
         }
+    }
+
+    private _isLightMode(): boolean {
+        return this._hasDarkText((this._indicator?.menu as any)?.box);
     }
 
     private _updateVpnStyle(): void {
@@ -519,7 +490,6 @@ export default class SpeedMeterExtension extends Extension {
         const menuBox = menu?.box as St.Widget | undefined;
         const menuActor = menu?.actor as St.Widget | undefined;
         const actors = [
-            this._box,
             menuActor,
             menuBox,
             this._dashboardItem,
@@ -765,28 +735,37 @@ export default class SpeedMeterExtension extends Extension {
 
     private _continueUpdateNetworkInfo(iface: string): void {
         // 2. Enhanced Smart VPN & Mesh Network Inspector
-        this._spawnAsync('ip addr', (stdout) => {
+        // Interface names from /proc/net/dev (no `ip` subprocess needed)
+        Gio.File.new_for_path(PROC_NET_DEV).load_contents_async(this._soupCancellable, (file, res) => {
+            let ifaceNames = '';
+            try {
+                const [ok, contents] = file!.load_contents_finish(res);
+                if (!ok || !contents) return;
+                ifaceNames = UTF8_DECODER.decode(contents).split('\n').slice(2)
+                    .map(l => l.split(':')[0].trim()).join('\n');
+            } catch (e) { return; }
+
             let vpnText = 'None';
             this._vpnIsActive = false;
             this._vpnColor = '';
 
-            if (/tailscale\d+/i.test(stdout)) {
+            if (/tailscale\d+/i.test(ifaceNames)) {
                 vpnText = 'Tailscale Mesh';
                 this._vpnIsActive = true;
                 this._vpnColor = '#2ec27e';
-            } else if (/wg\d*|wireguard/i.test(stdout)) {
+            } else if (/wg\d*|wireguard/i.test(ifaceNames)) {
                 vpnText = 'WireGuard';
                 this._vpnIsActive = true;
                 this._vpnColor = '#3584e4';
-            } else if (/warp/i.test(stdout)) {
+            } else if (/warp/i.test(ifaceNames)) {
                 vpnText = 'Cloudflare WARP';
                 this._vpnIsActive = true;
                 this._vpnColor = '#ffbe6f';
-            } else if (/zt\w+/i.test(stdout)) {
+            } else if (/zt\w+/i.test(ifaceNames)) {
                 vpnText = 'ZeroTier Mesh';
                 this._vpnIsActive = true;
                 this._vpnColor = '#f66151';
-            } else if (/tun\d*|tap\d*|ppp\d*|openvpn/i.test(stdout)) {
+            } else if (/tun\d*|tap\d*|ppp\d*|openvpn/i.test(ifaceNames)) {
                 vpnText = 'OpenVPN / TUN';
                 this._vpnIsActive = true;
                 this._vpnColor = '#2ec27e';
@@ -800,9 +779,19 @@ export default class SpeedMeterExtension extends Extension {
 
         // 3. Async Local IP
         if (iface) {
-            this._spawnAsync(`ip -4 addr show ${iface}`, (stdout) => {
-                const match = stdout.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
-                if (match && this._ipValue) this._ipValue.set_text(match[1]);
+            const client = new Gio.SocketClient({
+                family: Gio.SocketFamily.IPV4,
+                type: Gio.SocketType.DATAGRAM,
+                protocol: Gio.SocketProtocol.UDP,
+            });
+            // A UDP "connect" only picks the outbound route's source address; nothing is sent.
+            client.connect_async(Gio.InetSocketAddress.new_from_string('1.1.1.1', 53)!, this._soupCancellable, (c, res) => {
+                try {
+                    const conn = c!.connect_finish(res);
+                    const local = conn.get_local_address() as Gio.InetSocketAddress;
+                    this._ipValue?.set_text(local.get_address().to_string());
+                    conn.close_async(GLib.PRIORITY_DEFAULT, null, null);
+                } catch (e) {}
             });
         }
 
@@ -816,7 +805,7 @@ export default class SpeedMeterExtension extends Extension {
     private _getSoupSession(): Soup.Session {
         if (!this._soupSession) {
             this._soupSession = new Soup.Session({
-                user_agent: BROWSER_UA,
+                user_agent: USER_AGENT,
                 timeout: 10,
             });
         }
@@ -1011,7 +1000,7 @@ export default class SpeedMeterExtension extends Extension {
         serverDropdownBtn.set_child(serverDropdownInner);
 
         this._speedTestDropdownBtn = serverDropdownBtn;
-        this._speedTestDropdownBtnId = serverDropdownBtn.connect('clicked', () => {
+        serverDropdownBtn.connect('clicked', () => {
             if (this._isTestingSpeed) return;
             const isOpen = this._speedTestDropdownScroll?.visible ?? false;
             this._setSpeedTestDropdownOpen(!isOpen);
@@ -1226,7 +1215,7 @@ export default class SpeedMeterExtension extends Extension {
     private _getSpeedTestSoupSession(): Soup.Session {
         if (!this._speedTestSession) {
             this._speedTestSession = new Soup.Session({
-                user_agent: BROWSER_UA,
+                user_agent: USER_AGENT,
                 timeout: 25,
             });
         }
@@ -1295,7 +1284,7 @@ export default class SpeedMeterExtension extends Extension {
             callback(null);
             return;
         }
-        message.get_request_headers().append('User-Agent', BROWSER_UA);
+        message.get_request_headers().append('User-Agent', USER_AGENT);
 
         session.send_and_read_async(
             message,
@@ -1323,15 +1312,18 @@ export default class SpeedMeterExtension extends Extension {
                             // once every candidate has reported, instead of
                             // leaving it to fire uselessly later.
                             let probeTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                                this._speedTestSourceIds.delete(probeTimeoutId);
                                 probeTimeoutId = 0;
                                 finalize();
                                 return GLib.SOURCE_REMOVE;
                             });
+                            this._speedTestSourceIds.add(probeTimeoutId);
 
                             const finalize = () => {
                                 if (done) return;
                                 done = true;
-                                if (probeTimeoutId) {
+                                // Skip if disable() already removed it.
+                                if (probeTimeoutId && this._speedTestSourceIds.delete(probeTimeoutId)) {
                                     GLib.Source.remove(probeTimeoutId);
                                     probeTimeoutId = 0;
                                 }
@@ -1357,7 +1349,7 @@ export default class SpeedMeterExtension extends Extension {
                                     if (remaining <= 0) finalize();
                                     continue;
                                 }
-                                pingMsg.get_request_headers().append('User-Agent', BROWSER_UA);
+                                pingMsg.get_request_headers().append('User-Agent', USER_AGENT);
                                 const startPing = GLib.get_monotonic_time();
                                 session.send_and_read_async(pingMsg, GLib.PRIORITY_DEFAULT, cancellable as any, (s2, res2) => {
                                     const elapsedMs = (GLib.get_monotonic_time() - startPing) / 1000;
@@ -1426,7 +1418,7 @@ export default class SpeedMeterExtension extends Extension {
                 step();
                 return;
             }
-            msg.get_request_headers().append('User-Agent', BROWSER_UA);
+            msg.get_request_headers().append('User-Agent', USER_AGENT);
             const start = GLib.get_monotonic_time();
             session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, cancellable as any, (sess, res) => {
                 try {
@@ -1473,7 +1465,8 @@ export default class SpeedMeterExtension extends Extension {
         const finish = () => {
             if (finished) return;
             finished = true;
-            if (safetyTimeoutId) {
+            // Skip if disable() already removed it.
+            if (safetyTimeoutId && this._speedTestSourceIds.delete(safetyTimeoutId)) {
                 GLib.Source.remove(safetyTimeoutId);
                 safetyTimeoutId = 0;
             }
@@ -1485,9 +1478,12 @@ export default class SpeedMeterExtension extends Extension {
         };
 
         let safetyTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, durationMs + 2000, () => {
+            this._speedTestSourceIds.delete(safetyTimeoutId);
+            safetyTimeoutId = 0;
             finish();
             return GLib.SOURCE_REMOVE;
         });
+        this._speedTestSourceIds.add(safetyTimeoutId);
 
         const workerStep = (sizeIdx: number) => {
             if (finished) return;
@@ -1524,7 +1520,7 @@ export default class SpeedMeterExtension extends Extension {
                     onReqDone(0, false);
                     return;
                 }
-                msg.get_request_headers().append('User-Agent', BROWSER_UA);
+                msg.get_request_headers().append('User-Agent', USER_AGENT);
                 session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, cancellable as any, (sess, res) => {
                     let bytes = 0;
                     let ok = false;
@@ -1544,7 +1540,7 @@ export default class SpeedMeterExtension extends Extension {
                     onReqDone(0, false);
                     return;
                 }
-                msg.get_request_headers().append('User-Agent', BROWSER_UA);
+                msg.get_request_headers().append('User-Agent', USER_AGENT);
                 msg.set_request_body_from_bytes('application/octet-stream', new GLib.Bytes(uploadBuffer.subarray(0, size)));
                 session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, cancellable as any, (sess, res) => {
                     let ok = false;
@@ -1655,22 +1651,6 @@ export default class SpeedMeterExtension extends Extension {
         }
 
         this._notify('Speedtest Complete', `Results:\nDownload: ${downMbps} Mbps | Upload: ${upMbps} Mbps | Ping: ${avgPing}`);
-    }
-
-    private _spawnAsync(cmd: string, callback: (stdout: string) => void): void {
-        try {
-            const proc = new Gio.Subprocess({
-                argv: ['bash', '-c', cmd],
-                flags: Gio.SubprocessFlags.STDOUT_PIPE,
-            });
-            proc.init(null);
-            proc.communicate_utf8_async(null, null, (p, res) => {
-                try {
-                    const [ok, stdout] = p!.communicate_utf8_finish(res);
-                    if (ok && stdout) callback(stdout);
-                } catch (e) {}
-            });
-        } catch (e) {}
     }
 
     private _updateStatRow(stat: StatRowWidgets | null, rx: number, tx: number): void {
@@ -1987,6 +1967,8 @@ export default class SpeedMeterExtension extends Extension {
             GLib.Source.remove(this._saveTimeoutId);
             this._saveTimeoutId = 0;
         }
+        for (const id of this._speedTestSourceIds) GLib.Source.remove(id);
+        this._speedTestSourceIds.clear();
 
         if (this._indicator && this._menuOpenStateId) {
             (this._indicator.menu as any).disconnect(this._menuOpenStateId);
@@ -1998,13 +1980,9 @@ export default class SpeedMeterExtension extends Extension {
             this._settingsChangedId = 0;
         }
 
-        if (this._interfaceSettings && this._colorSchemeChangedId) {
-            this._interfaceSettings.disconnect(this._colorSchemeChangedId);
-            this._colorSchemeChangedId = 0;
-        }
-        if (this._interfaceSettings && this._gtkThemeChangedId) {
-            this._interfaceSettings.disconnect(this._gtkThemeChangedId);
-            this._gtkThemeChangedId = 0;
+        if (this._indicator && this._menuStyleChangedId) {
+            (this._indicator.menu as any).box.disconnect(this._menuStyleChangedId);
+            this._menuStyleChangedId = 0;
         }
         if (this._interfaceSettings && this._accentColorChangedId) {
             this._interfaceSettings.disconnect(this._accentColorChangedId);
@@ -2033,106 +2011,70 @@ export default class SpeedMeterExtension extends Extension {
             this._speedTestSession.abort();
             this._speedTestSession = null;
         }
-        this._statsManager?.saveSync();
+        this._statsManager?.save();
 
-        this._activityGraph?.destroy();
-        this._activityGraph = null;
-
-        for (const item of this._speedTestDropdownItems) {
-            if (item.clickId) {
-                try { item.btn.disconnect(item.clickId); } catch (e) {}
-            }
-            item.btn.destroy();
-        }
+        // Deepest widgets first (depths from the real widget tree): destroying a widget
+        // after one of its ancestors hits an already-disposed object.
+        for (const item of this._speedTestDropdownItems) item.btn.destroy();
         this._speedTestDropdownItems = [];
-
-        if (this._speedTestDropdownBtn && this._speedTestDropdownBtnId) {
-            try { this._speedTestDropdownBtn.disconnect(this._speedTestDropdownBtnId); } catch (e) {}
-            this._speedTestDropdownBtnId = 0;
-        }
-        this._speedTestDropdownBtn?.destroy();
-        this._speedTestDropdownBtn = null;
-        this._speedTestDropdownArrow?.destroy();
-        this._speedTestDropdownArrow = null;
-        this._speedTestDropdownScroll?.destroy();
-        this._speedTestDropdownScroll = null;
-
-        this._speedTestPanelItem?.destroy();
-        this._speedTestPanelItem = null;
-
-        this._statsSectionItem?.destroy();
-        this._statsSectionItem = null;
-
-        this._dashboardItem?.destroy();
-        this._dashboardItem = null;
-
-        this._actionsItem?.destroy();
-        this._actionsItem = null;
-
-        this._dashboardBox?.destroy();
-        this._dashboardBox = null;
-
-        this._statsBox?.destroy();
-        this._statsBox = null;
-
-        this._actionsBox?.destroy();
-        this._actionsBox = null;
-
-        this._activeAppLabel?.destroy();
-        this._activeAppLabel = null;
-
-        this._ifaceValue?.destroy();
-        this._ifaceValue = null;
-
         this._vpnValue?.destroy();
         this._vpnValue = null;
-
-        this._ipValue?.destroy();
-        this._ipValue = null;
-
-        this._publicIpValue?.destroy();
-        this._publicIpValue = null;
-
-        this._speedTestDownVal?.destroy();
-        this._speedTestDownVal = null;
-
-        this._speedTestUpVal?.destroy();
-        this._speedTestUpVal = null;
-
-        this._speedTestPingVal?.destroy();
-        this._speedTestPingVal = null;
-
-        this._speedTestQualityVal?.destroy();
-        this._speedTestQualityVal = null;
-
-        this._speedTestRunBtnLabel?.destroy();
-        this._speedTestRunBtnLabel = null;
-
-        this._speedTestJitterVal?.destroy();
-        this._speedTestJitterVal = null;
-
-        this._speedTestLossVal?.destroy();
-        this._speedTestLossVal = null;
-
         this._speedTestServerSub?.destroy();
         this._speedTestServerSub = null;
-
-        this._downLabel?.destroy();
-        this._downLabel = null;
-
-        this._sepLabel?.destroy();
-        this._sepLabel = null;
-
+        this._publicIpValue?.destroy();
+        this._publicIpValue = null;
+        this._ipValue?.destroy();
+        this._ipValue = null;
+        this._ifaceValue?.destroy();
+        this._ifaceValue = null;
+        this._speedTestUpVal?.destroy();
+        this._speedTestUpVal = null;
+        this._speedTestRunBtnLabel?.destroy();
+        this._speedTestRunBtnLabel = null;
+        this._speedTestPingVal?.destroy();
+        this._speedTestPingVal = null;
+        this._speedTestLossVal?.destroy();
+        this._speedTestLossVal = null;
+        this._speedTestJitterVal?.destroy();
+        this._speedTestJitterVal = null;
+        this._speedTestDropdownArrow?.destroy();
+        this._speedTestDropdownArrow = null;
+        this._speedTestDownVal?.destroy();
+        this._speedTestDownVal = null;
+        this._activeAppLabel?.destroy();
+        this._activeAppLabel = null;
         this._upLabel?.destroy();
         this._upLabel = null;
-
+        this._speedTestQualityVal?.destroy();
+        this._speedTestQualityVal = null;
+        this._sepLabel?.destroy();
+        this._sepLabel = null;
+        this._downLabel?.destroy();
+        this._downLabel = null;
+        this._activityGraph?.destroy();
+        this._activityGraph = null;
+        this._speedTestDropdownScroll?.destroy();
+        this._speedTestDropdownScroll = null;
+        this._speedTestDropdownBtn?.destroy();
+        this._speedTestDropdownBtn = null;
         this._box?.destroy();
         this._box = null;
-
-        if (this._indicator) {
-            this._indicator.destroy();
-            this._indicator = null;
-        }
+        this._statsBox?.destroy();
+        this._statsBox = null;
+        this._dashboardBox?.destroy();
+        this._dashboardBox = null;
+        this._actionsBox?.destroy();
+        this._actionsBox = null;
+        this._statsSectionItem?.destroy();
+        this._statsSectionItem = null;
+        this._speedTestPanelItem?.destroy();
+        this._speedTestPanelItem = null;
+        this._dashboardItem?.destroy();
+        this._dashboardItem = null;
+        this._actionsItem?.destroy();
+        this._actionsItem = null;
+        this._indicator?.destroy();
+        this._indicator = null;
 
         this._statToday = null;
         this._statThisMonth = null;

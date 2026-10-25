@@ -33,7 +33,7 @@
 - **📊 App-Level Profiling & Quotas** — Tracks background bandwidth consumption by application and allows setting Monthly Data Caps (GB) with desktop notification alerts.
 - **⚙️ Native Preferences** — Full configuration window (Libadwaita) to target interfaces, toggle bits/bytes, tweak visual aesthetics, and export statistical data to CSV logs. 
 - **⚡ Deeply Optimized** — Asynchronous I/O, bounds-checking suspend/resume guards, and pure GNOME `St.Icon` symbolic assets ensure ~0% CPU, no GC churn, and native desktop integration.
-- **💾 Persistent History** — Automatically tracks and securely caches daily/monthly statistics to `~/.cache/internet-speed-meter/stats.json`.
+- **💾 Persistent History** — Automatically tracks and securely caches daily/monthly statistics to `~/.local/share/internet-speed-meter/stats.json`.
 - **🖥️ GNOME 50+ Ready** — Pure ESM architecture fully compatible with GNOME 45 through 50+.
 
 ## 📦 Requirements
