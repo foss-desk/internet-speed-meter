@@ -25,11 +25,14 @@ export class StatsManager {
     private _loaded: boolean = false;
     private _pendingUpdates: TrafficData[] = [];
     private _saving: boolean = false;
+    private _saveQueued: boolean = false;
+    private _dirReady: boolean = false;
     private _loadedPromise: Promise<void>;
     private _resolveLoaded: () => void = () => {};
 
-    constructor(cacheDir: string) {
-        const path = GLib.build_filenamev([cacheDir, 'stats.json']);
+    constructor() {
+        // User data dir, not the extension dir: that one is replaced on every extension update.
+        const path = GLib.build_filenamev([GLib.get_user_data_dir(), 'internet-speed-meter', 'stats.json']);
         this._file = Gio.File.new_for_path(path);
         this._loadedPromise = new Promise((resolve) => {
             this._resolveLoaded = resolve;
@@ -95,47 +98,24 @@ export class StatsManager {
         return this._history.monthly;
     }
 
-    saveSync(): void {
-        if (!this._loaded) return;
-        try {
-            const json = JSON.stringify(this._history);
-            if (json === this._lastSavedJson) return;
-
-            const parent = this._file.get_parent();
-            if (parent && !parent.query_exists(null)) {
-                parent.make_directory_with_parents(null);
-            }
-
-            const [ok] = this._file.replace_contents(
-                UTF8_ENCODER.encode(json),
-                null,
-                false,
-                Gio.FileCreateFlags.REPLACE_DESTINATION,
-                null
-            );
-            if (ok) {
-                this._lastSavedJson = json;
-            }
-        } catch (e) {
-            logError(e as Error, 'SpeedMeter: Failed to save stats synchronously');
-        }
-    }
-
     async save(): Promise<void> {
-        if (!this._loaded || this._saving) return;
+        if (!this._loaded) return;
+        // A save already in flight: write again once it finishes, so the latest data is never dropped.
+        if (this._saving) {
+            this._saveQueued = true;
+            return;
+        }
+        const json = JSON.stringify(this._history);
+        // Optimization: Skip disk I/O if data hasn't changed since last save
+        if (json === this._lastSavedJson) return;
+
+        this._saving = true;
         try {
-            const json = JSON.stringify(this._history);
-            
-            // Optimization: Skip disk I/O if data hasn't changed since last save
-            if (json === this._lastSavedJson) return;
-
-            const parent = this._file.get_parent();
-            if (parent && !parent.query_exists(null)) {
-                parent.make_directory_with_parents(null);
+            if (!this._dirReady) {
+                await this._makeParentDir();
+                this._dirReady = true;
             }
-
-            this._saving = true;
-            return new Promise((resolve, reject) => {
+            await new Promise<void>((resolve, reject) => {
                 this._file.replace_contents_async(
                     UTF8_ENCODER.encode(json),
                     null,
@@ -143,16 +123,9 @@ export class StatsManager {
                     Gio.FileCreateFlags.REPLACE_DESTINATION,
                     null,
                     (file, res) => {
-                        this._saving = false;
                         try {
-                            if (!file) {
-                                resolve();
-                                return;
-                            }
-                            const [ok] = file.replace_contents_finish(res);
-                            if (ok) {
-                                this._lastSavedJson = json;
-                            }
+                            const [ok] = file!.replace_contents_finish(res);
+                            if (ok) this._lastSavedJson = json;
                             resolve();
                         } catch (e) {
                             reject(e);
@@ -161,9 +134,28 @@ export class StatsManager {
                 );
             });
         } catch (e) {
-            this._saving = false;
             logError(e as Error, 'SpeedMeter: Failed to save stats');
+        } finally {
+            this._saving = false;
         }
+        if (this._saveQueued) {
+            this._saveQueued = false;
+            await this.save();
+        }
+    }
+
+    private _makeParentDir(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this._file.get_parent()!.make_directory_async(GLib.PRIORITY_DEFAULT, null, (dir, res) => {
+                try {
+                    dir!.make_directory_finish(res);
+                    resolve();
+                } catch (e) {
+                    if ((e as GLib.Error).matches?.(Gio.io_error_quark(), Gio.IOErrorEnum.EXISTS)) resolve();
+                    else reject(e);
+                }
+            });
+        });
     }
 
     update(rxBytes: number, txBytes: number): void {

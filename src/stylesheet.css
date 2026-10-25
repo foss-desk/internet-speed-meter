@@ -620,9 +620,10 @@
    Everything above assumes the shell's usual dark panel/popup chrome and
    hardcodes light-colored text/tints accordingly - i.e. everything above is
    this extension's "dark-mode" styling. SpeedMeterExtension always applies
-   exactly one of "light-mode"/"dark-mode" to the panel box and the popup
-   menu's container (see _applyColorScheme() in extension.ts), reacting live
-   to GNOME's color-scheme setting; "dark-mode" needs no rules of its own
+   exactly one of "light-mode"/"dark-mode" to the popup menu's container
+   (see _applyColorScheme() in extension.ts), decided from the text color the
+   shell theme actually renders there. The top-panel labels are never
+   re-themed: the panel stays dark in both modes; "dark-mode" needs no rules of its own
    here precisely because the unclassed rules above already are the dark
    styling, so only the "light-mode" case needs to re-theme surfaces that
    inherit the shell's background.
@@ -644,32 +645,6 @@
    color via ActivityGraph.setLightMode(), called from _applyColorScheme()
    here, since Cairo drawing isn't reachable from this stylesheet.
    ========================================================================== */
-
-.speed-meter-box.light-mode:active {
-    background-color: rgba(0, 0, 0, 0.08);
-}
-
-.light-mode .speed-meter-label,
-.light-mode .speed-meter-single-label,
-.speed-meter-box.light-mode .speed-meter-label,
-.speed-meter-box.light-mode .speed-meter-single-label {
-    color: #24292f;
-}
-
-.light-mode .speed-meter-sep-label,
-.speed-meter-box.light-mode .speed-meter-sep-label {
-    color: #8c959f;
-}
-
-.light-mode .speed-meter-download-label,
-.speed-meter-box.light-mode .speed-meter-download-label {
-    color: #0969da;
-}
-
-.light-mode .speed-meter-upload-label,
-.speed-meter-box.light-mode .speed-meter-upload-label {
-    color: #cf222e;
-}
 
 /* Dashboard Card (Pure White with Crisp Light Border) */
 .light-mode .speed-meter-dashboard,

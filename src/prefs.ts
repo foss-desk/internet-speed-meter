@@ -11,6 +11,15 @@ import { StatsManager } from './stats.js';
 
 export default class SpeedMeterPreferences extends ExtensionPreferences {
     async fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
+        // GNOME's prefs dialog reads `window.visible_page` after this method; with some
+        // gjs/libadwaita versions resolving that GObject property logs a type-mismatch
+        // Gjs-WARNING. An own accessor backed by the official getter/setter avoids it.
+        Object.defineProperty(window, 'visible_page', {
+            get: () => window.get_visible_page(),
+            set: (page: Adw.PreferencesPage) => window.set_visible_page(page),
+            configurable: true,
+        });
+
         const settings = this.getSettings();
 
         // ================= PAGE 1: DISPLAY & MONITOR =================
@@ -63,7 +72,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
         // Adaptive Power Saver
         const powerRow = new Adw.SwitchRow({
-            title: 'Adaptive Power & Battery Saver',
+            title: 'Adaptive Power &amp; Battery Saver',
             subtitle: 'Automatically reduce polling frequency when on battery power to conserve energy',
         });
         settings.bind('adaptive-power-saver', powerRow, 'active', Gio.SettingsBindFlags.DEFAULT);
@@ -71,7 +80,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
         // --- Visibility & Auto-Hide Group ---
         const visibilityGroup = new Adw.PreferencesGroup({
-            title: 'Visibility & Auto-Hide',
+            title: 'Visibility &amp; Auto-Hide',
             description: 'Customize top panel speed indicators and idle behavior.',
         });
         displayPage.add(visibilityGroup);
@@ -136,7 +145,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
         // --- Data Quota & Alerts Group ---
         const quotaGroup = new Adw.PreferencesGroup({
-            title: 'Data Quota & Alerts',
+            title: 'Data Quota &amp; Alerts',
             description: 'Set monthly traffic limits and desktop warning notifications.',
         });
         dataPage.add(quotaGroup);
@@ -188,7 +197,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         });
         exportBtn.connect('clicked', async () => {
             try {
-                const statsMgr = new StatsManager(this.path);
+                const statsMgr = new StatsManager();
                 await statsMgr.ready();
                 const csvData = statsMgr.exportToCsv();
                 const homeDir = GLib.get_home_dir();
@@ -228,7 +237,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         dataPage.add(appGroup);
 
         try {
-            const statsMgr = new StatsManager(this.path);
+            const statsMgr = new StatsManager();
             await statsMgr.ready();
             const appList = statsMgr.getMonthlyAppUsage();
 

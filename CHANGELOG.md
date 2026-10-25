@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-10-26
+
+### Removed
+- Dropped the last external subprocesses (`ip addr`, `ip -4 addr show <iface>`) and the `bash -c` spawn helper. VPN/mesh detection now reads interface names from `/proc/net/dev` asynchronously, and the local IP comes from the source address of an async UDP `Gio.SocketClient` connection (no packet is sent), so no shell command is ever built from runtime data.
+- Removed `StatsManager.saveSync()`; `disable()` now uses the async `save()`, so no synchronous file IO happens in the shell process.
+
+### Changed
+- HTTP requests now send an honest `User-Agent` naming the extension instead of impersonating Chrome (Ookla and the IP services accept it).
+- The extension description now discloses which external services are contacted and when.
+- Traffic history moved from the extension's own install directory to `~/.local/share/internet-speed-meter/stats.json`. The install directory is replaced on every extension update (wiping all history) and isn't writable for system-wide installs.
+
+### Fixed
+- The speedtest's server-probe and throughput safety timeouts were local variables that `disable()` could not reach; disabling mid-test left them to fire afterwards and touch destroyed widgets. They are now tracked and removed in `disable()`.
+- Light/dark mode was guessed from `gtk-theme`/`color-scheme`, which doesn't match how GNOME Shell actually picks its style (session mode + color-scheme): stock GNOME's default dark shell was detected as light (dark text on a dark popup), and on Ubuntu's light mode the top-panel RX/TX labels went dark although the top bar stays dark. The popup is now themed from the text color the shell theme really renders, updating live on theme switches (works with custom shell themes too), and the top-panel labels always keep their fixed bright colors.
+- Monthly graph in dark mode threw on every repaint (`addColorStopRGBA` was missing its alpha argument), so past-day bars after the first, the "Monthly Peak" header and the day labels were never drawn. Today's bar also used a fixed neon cyan that was barely visible on the light backdrop; it now uses the mode's download color.
+- Graph text used Cairo's toy text API, which has no font fallback, so the ↓/↑ arrows rendered as empty boxes; it now uses Pango. Waves and the tallest monthly bar no longer run into the header text, and right-side labels are measured and right-aligned instead of placed at fixed pixel offsets.
+- The graph's Cairo context is now disposed after each repaint (`cr.$dispose()`), instead of leaking until garbage collection.
+- Three preference group titles ("Adaptive Power & Battery Saver", "Visibility & Auto-Hide", "Data Quota & Alerts") rendered blank, because Adwaita parses group titles as markup and the raw `&` was invalid; they're now escaped.
+- Disabling the extension during a speedtest logged `Source ID … was not found` (a cancelled request removed a timeout that `disable()` had already removed) and two "already disposed" criticals (widgets destroyed after an ancestor). Timeouts are now removed exactly once and widgets are destroyed deepest-first; verified with enable/disable cycles mid-test in a real shell.
+- Opening preferences logged two `Gjs-WARNING`s about `Adw.PreferencesWindow::visible-page` (a gjs/libadwaita type-info mismatch hit when GNOME's prefs dialog reads that property). The window now gets an own `visible_page` accessor backed by the official `get_visible_page()`/`set_visible_page()`, so the preferences open warning-free.
+- `StatsManager.save()` silently dropped a save requested while another was still writing (e.g. the final save in `disable()`), losing the latest traffic. It now queues one follow-up write. Its directory check/creation is now async too.
+
 ## [1.4.6] - 2026-10-24
 
 ### Changed

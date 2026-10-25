@@ -3,6 +3,8 @@
 
 import Cairo from 'gi://cairo';
 import GObject from 'gi://GObject';
+import Pango from 'gi://Pango';
+import PangoCairo from 'gi://PangoCairo';
 import St from 'gi://St';
 import { StatsManager, TrafficData } from './stats.js';
 
@@ -134,9 +136,7 @@ class ActivityGraphImpl extends St.DrawingArea {
 
     // Download/upload wave colors are a saturated neon cyan/magenta tuned for
     // the dark backdrop; on the light backdrop they're swapped for the same
-    // darker teal/magenta shades already used by the light-mode panel labels
-    // (see .light-mode .speed-meter-download-label/-upload-label) to keep
-    // contrast against a light background.
+    // darker teal/magenta shades to keep contrast against a light background.
     private _waveColor(kind: 'rx' | 'tx'): [number, number, number] {
         if (kind === 'rx') return this._lightMode ? [0.039, 0.494, 0.643] : [0.0, 0.82, 1.0];
         return this._lightMode ? [0.671, 0.204, 0.431] : [0.97, 0.34, 0.99];
@@ -146,12 +146,16 @@ class ActivityGraphImpl extends St.DrawingArea {
         const cr = area.get_context();
         const [w, h] = area.get_surface_size();
 
-        if (w <= 0 || h <= 0) return;
-
-        if (this._mode === 'realtime') {
-            this._drawRealtimeGraph(cr, w, h);
-        } else {
-            this._drawMonthlyGraph(cr, w, h);
+        try {
+            if (w <= 0 || h <= 0) return;
+            if (this._mode === 'realtime') {
+                this._drawRealtimeGraph(cr, w, h);
+            } else {
+                this._drawMonthlyGraph(cr, w, h);
+            }
+        } finally {
+            // Free the native context now instead of waiting for GC (gjs.guide).
+            cr.$dispose();
         }
     }
 
@@ -163,7 +167,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         const maxTx = Math.max(...this._txBuffer, 1024 * 10);
         const peakSpeed = Math.max(maxRx, maxTx);
 
-        const graphH = h - 24;
+        const graphH = h - 34; // keep the waves below the header text row
         const bottomY = h - 12;
         const count = this._rxBuffer.length;
         const stepX = w / (count - 1);
@@ -172,7 +176,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
-            const y = (graphH / 3) * i;
+            const y = bottomY - (graphH / 3) * i;
             cr.moveTo(0, y);
             cr.lineTo(w, y);
             cr.stroke();
@@ -191,29 +195,21 @@ class ActivityGraphImpl extends St.DrawingArea {
         // Download pill
         const [rxR, rxG, rxB] = this._waveColor('rx');
         cr.setSourceRGBA(rxR, rxG, rxB, 0.95);
-        cr.setFontSize(9.5);
-        cr.moveTo(8, 14);
-        cr.showText(`\u2193 ${this._fmtSpeed(currentRx)}`);
+        const rxWidth = this._text(cr, `\u2193 ${this._fmtSpeed(currentRx)}`, 8, 14, 9.5);
 
         // Upload pill
         const [txR, txG, txB] = this._waveColor('tx');
         cr.setSourceRGBA(txR, txG, txB, 0.95);
-        cr.moveTo(105, 14);
-        cr.showText(`\u2191 ${this._fmtSpeed(currentTx)}`);
+        this._text(cr, `\u2191 ${this._fmtSpeed(currentTx)}`, 8 + rxWidth + 12, 14, 9.5);
 
         // Peak Badge
         cr.setSourceRGBA(...this._ink(0.45, 0.5));
-        cr.setFontSize(8.5);
-        cr.moveTo(w - 105, 14);
-        cr.showText(`Peak: ${this._fmtSpeed(peakSpeed)}`);
+        this._text(cr, `Peak: ${this._fmtSpeed(peakSpeed)}`, w - 6, 14, 8.5, true);
 
         // Bottom axis labels
         cr.setSourceRGBA(...this._ink(0.3, 0.38));
-        cr.setFontSize(8);
-        cr.moveTo(6, h - 2);
-        cr.showText("-60s");
-        cr.moveTo(w - 24, h - 2);
-        cr.showText("now");
+        this._text(cr, '-60s', 6, h - 2, 8);
+        this._text(cr, 'now', w - 6, h - 2, 8, true);
     }
 
     private _drawBezierWave(
@@ -283,14 +279,14 @@ class ActivityGraphImpl extends St.DrawingArea {
         const numDays = this._dailyData.length;
         const barSpacing = 3;
         const barWidth = Math.max(2, (w / numDays) - barSpacing);
-        const maxBarHeight = h - 26;
+        const maxBarHeight = h - 34; // keep bars below the header text row
         const bottomY = h - 12;
 
         // Subtle horizontal guide lines
         cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
-            const y = (maxBarHeight / 3) * i;
+            const y = bottomY - (maxBarHeight / 3) * i;
             cr.moveTo(0, y);
             cr.lineTo(w, y);
             cr.stroke();
@@ -305,10 +301,11 @@ class ActivityGraphImpl extends St.DrawingArea {
             const y = bottomY - barH;
 
             if ((i + 1) === this._lastUpdateDay) {
-                // Today's bar glowing cyan-blue
+                // Today's bar in the download color (neon cyan is unreadable on light)
+                const [r, g, b] = this._waveColor('rx');
                 const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
-                grad.addColorStopRGBA(0, 0.0, 0.82, 1.0, 1.0);
-                grad.addColorStopRGBA(1, 0.21, 0.52, 0.89, 0.5);
+                grad.addColorStopRGBA(0, r, g, b, 1.0);
+                grad.addColorStopRGBA(1, r, g, b, 0.5);
                 cr.setSource(grad);
             } else if (this._lightMode) {
                 // Past days muted slate-blue bar (the dark-mode "frosted
@@ -321,7 +318,7 @@ class ActivityGraphImpl extends St.DrawingArea {
                 // Past days subtle frosted glass bar
                 const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
                 grad.addColorStopRGBA(0, 1, 1, 1, 0.35);
-                grad.addColorStopRGBA(1, 1, 1, 0.12);
+                grad.addColorStopRGBA(1, 1, 1, 1, 0.12);
                 cr.setSource(grad);
             }
 
@@ -330,15 +327,25 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
 
         cr.setSourceRGBA(...this._ink(0.8, 0.85));
-        cr.setFontSize(9.5);
-        cr.moveTo(8, 14);
-        cr.showText(`Monthly Peak: ${this._fmt(this._peakValue)}`);
+        this._text(cr, `Monthly Peak: ${this._fmt(this._peakValue)}`, 8, 14, 9.5);
 
         cr.setSourceRGBA(...this._ink(0.4, 0.45));
-        cr.moveTo(0, h - 2);
-        cr.showText("Day 1");
-        cr.moveTo(w - 45, h - 2);
-        cr.showText(`Day ${numDays}`);
+        this._text(cr, 'Day 1', 0, h - 2, 8);
+        this._text(cr, `Day ${numDays}`, w, h - 2, 8, true);
+    }
+
+    // Pango instead of Cairo's toy text API, which has no font fallback (\u2193/\u2191 drew as boxes).
+    // `x` is the left edge (right edge when alignRight), `y` the baseline; returns the text width.
+    private _text(cr: any, text: string, x: number, y: number, sizePx: number, alignRight = false): number {
+        const layout = PangoCairo.create_layout(cr);
+        const font = Pango.FontDescription.from_string('Sans');
+        font.set_absolute_size(sizePx * Pango.SCALE);
+        layout.set_font_description(font);
+        layout.set_text(text, -1);
+        const width = layout.get_pixel_extents()[1]?.width ?? 0;
+        cr.moveTo(alignRight ? x - width : x, y - layout.get_baseline() / Pango.SCALE);
+        PangoCairo.show_layout(cr, layout);
+        return width;
     }
 
     private _fmtSpeed(bytesPerSec: number): string {

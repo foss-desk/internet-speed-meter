@@ -1,6 +1,6 @@
 {
   "name": "Internet Speed Meter",
-  "description": "A lightweight, real-time network speed monitor for your GNOME Shell top panel. Displays upload and download speeds with minimal CPU overhead.",
+  "description": "A lightweight, real-time network speed monitor for your GNOME Shell top panel. Displays upload and download speeds with minimal CPU overhead.\n\nNetwork use: opening the menu looks up your public IP via api.ipify.org (fallback icanhazip.com). The speedtest only runs when you start it, and contacts Ookla's speedtest.net servers.",
   "uuid": "speed-meter@mojahid.lunecode.com",
   "shell-version": [
     "45",
@@ -11,7 +11,7 @@
     "50",
     "51"
   ],
-  "version": 20,
+  "version": 21,
   "url": "https://github.com/foss-desk/internet-speed-meter",
   "settings-schema": "org.gnome.shell.extensions.speed-meter"
 }
