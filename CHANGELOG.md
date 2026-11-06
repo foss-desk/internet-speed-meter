@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-11-06
+
+### Added
+- **Network Quality Monitor** — a live quality strip in the popup dashboard header shows connection quality (EXCELLENT / GOOD / FAIR / POOR), round-trip ping, and jitter, updated every 30 seconds. Quality is derived from a rolling window of five HTTP HEAD probes to `1.1.1.1/cdn-cgi/trace` using the existing Libsoup 3 session; no new subprocess, no new network session. The strip adapts to light and dark mode.
+
 ## [1.5.0] - 2026-10-26
 
 ### Removed

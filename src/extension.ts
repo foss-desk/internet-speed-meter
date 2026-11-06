@@ -109,6 +109,9 @@ export default class SpeedMeterExtension extends Extension {
     private _speedTestDropdownArrow: St.Icon | null = null;
     private _speedTestDropdownScroll: St.ScrollView | null = null;
     private _speedTestDropdownItems: { btn: St.Button; check: St.Icon; clickId: number }[] = [];
+    private _speedTestPhaseLabels: St.Label[] = [];
+    private _speedTestProgressFill: St.Widget | null = null;
+    private _speedTestProgressTimeoutId: number = 0;
     private _speedTestLocationIndex: number = 0;
     private _isTestingSpeed: boolean = false;
     private _lastNetworkUpdate: number = 0;
@@ -162,11 +165,18 @@ export default class SpeedMeterExtension extends Extension {
     private _statLastMonth: StatRowWidgets | null = null;
     private _statSession: StatRowWidgets | null = null;
 
+    private _netQualityTimeoutId: number = 0;
+    private _netQualityPingSamples: number[] = [];
+    private _netQualityBadge: St.Label | null = null;
+    private _netQualityPingVal: St.Label | null = null;
+    private _netQualityJitterVal: St.Label | null = null;
+
     enable(): void {
         this._prevRx = 0;
         this._prevTx = 0;
         this._sessionRx = 0;
         this._sessionTx = 0;
+        this._netQualityPingSamples = [];
         this._prevTime = GLib.get_monotonic_time();
         this._hasPrevStats = false;
         this._isOnBattery = false;
@@ -249,6 +259,7 @@ export default class SpeedMeterExtension extends Extension {
 
         this._procFile = Gio.File.new_for_path(PROC_NET_DEV);
         this._restartTimer();
+        this._startNetQualityMonitor();
 
         this._saveTimeoutId = GLib.timeout_add(GLib.PRIORITY_LOW, SAVE_INTERVAL_MS, () => {
             this._statsManager?.save();
@@ -266,17 +277,19 @@ export default class SpeedMeterExtension extends Extension {
         // --- DASHBOARD SECTION (Grid + Graph) ---
         const dashboardBox = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
             style_class: 'speed-meter-dashboard'
         });
         this._dashboardBox = dashboardBox;
 
-        const headerBox = new St.BoxLayout({ 
-            orientation: Clutter.Orientation.VERTICAL, 
-            style_class: 'speed-meter-dashboard-header' 
+        const headerBox = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            style_class: 'speed-meter-dashboard-header'
         });
-        
+
         // 2x2 Grid for Network Info
-        const infoGrid = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, style_class: 'speed-meter-network-info-grid' });
+        const infoGrid = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-network-info-grid' });
         
         const row1 = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-network-row' });
         const ifaceRow = this._createInfoCard('network-wired-symbolic', 'Connection');
@@ -321,7 +334,52 @@ export default class SpeedMeterExtension extends Extension {
         appTrackerBar.add_child(appTitle);
         appTrackerBar.add_child(this._activeAppLabel);
 
+        // Network Quality Monitor Strip
+        const qualityStrip = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            style_class: 'speed-meter-quality-strip',
+        });
+        const qualityIcon = new St.Icon({
+            icon_name: 'network-wireless-signal-excellent-symbolic',
+            style_class: 'speed-meter-quality-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._netQualityBadge = new St.Label({
+            text: 'MEASURING...',
+            style_class: 'speed-meter-quality-badge speed-meter-quality-measuring',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        });
+        const qualityPingKey = new St.Label({
+            text: 'Ping',
+            style_class: 'speed-meter-quality-key',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._netQualityPingVal = new St.Label({
+            text: '---',
+            style_class: 'speed-meter-quality-val',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const qualityJitterKey = new St.Label({
+            text: 'Jitter',
+            style_class: 'speed-meter-quality-key',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._netQualityJitterVal = new St.Label({
+            text: '---',
+            style_class: 'speed-meter-quality-val',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        qualityStrip.add_child(qualityIcon);
+        qualityStrip.add_child(this._netQualityBadge);
+        qualityStrip.add_child(qualityPingKey);
+        qualityStrip.add_child(this._netQualityPingVal);
+        qualityStrip.add_child(qualityJitterKey);
+        qualityStrip.add_child(this._netQualityJitterVal);
+
         headerBox.add_child(infoGrid);
+        headerBox.add_child(qualityStrip);
         headerBox.add_child(appTrackerBar);
         dashboardBox.add_child(headerBox);
 
@@ -367,6 +425,7 @@ export default class SpeedMeterExtension extends Extension {
         dashboardBox.add_child(graphWrapper);
 
         this._dashboardItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        (this._dashboardItem as any).style = 'padding: 0; margin: 0;';
         this._dashboardItem.add_child(dashboardBox);
         (this._indicator.menu as any).addMenuItem(this._dashboardItem);
 
@@ -401,6 +460,7 @@ export default class SpeedMeterExtension extends Extension {
         statsBox.add_child(sessionRow.container);
 
         this._statsSectionItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        (this._statsSectionItem as any).style = 'padding: 0; margin: 0;';
         this._statsSectionItem.add_child(statsBox);
         (this._indicator.menu as any).addMenuItem(this._statsSectionItem);
 
@@ -438,6 +498,7 @@ export default class SpeedMeterExtension extends Extension {
         actionsBox.add_child(settingsBtn);
 
         this._actionsItem = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        (this._actionsItem as any).style = 'padding: 0; margin: 0;';
         this._actionsItem.add_child(actionsBox);
         (this._indicator.menu as any).addMenuItem(this._actionsItem);
 
@@ -900,6 +961,55 @@ export default class SpeedMeterExtension extends Extension {
         if (this._activeAppLabel) this._activeAppLabel.set_text('System');
     }
 
+    private _startNetQualityMonitor(): void {
+        this._measureNetQuality();
+        this._netQualityTimeoutId = GLib.timeout_add(GLib.PRIORITY_LOW, 30000, () => {
+            this._measureNetQuality();
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+
+    private _measureNetQuality(): void {
+        if (!this._netQualityBadge) return;
+        const session = this._getSoupSession();
+        const msg = Soup.Message.new('HEAD', 'https://1.1.1.1/cdn-cgi/trace');
+        if (!msg) return;
+        const start = GLib.get_monotonic_time();
+        session.send_and_read_async(msg, GLib.PRIORITY_LOW, this._soupCancellable as any, (sess, res) => {
+            try {
+                sess?.send_and_read_finish(res);
+                const rtt = (GLib.get_monotonic_time() - start) / 1000;
+                this._netQualityPingSamples.push(rtt);
+                if (this._netQualityPingSamples.length > 5) this._netQualityPingSamples.shift();
+                this._updateNetQualityDisplay();
+            } catch (e) {}
+        });
+    }
+
+    private _updateNetQualityDisplay(): void {
+        if (!this._netQualityBadge || this._netQualityPingSamples.length === 0) return;
+        const s = this._netQualityPingSamples;
+        const avg = s.reduce((a, b) => a + b, 0) / s.length;
+        const jitter = s.length > 1
+            ? s.slice(1).reduce((sum, v, i) => sum + Math.abs(v - s[i]), 0) / (s.length - 1)
+            : 0;
+
+        let label: string, cssClass: string;
+        if (avg < 30) { label = 'EXCELLENT'; cssClass = 'speed-meter-quality-excellent'; }
+        else if (avg < 80) { label = 'GOOD'; cssClass = 'speed-meter-quality-good'; }
+        else if (avg < 150) { label = 'FAIR'; cssClass = 'speed-meter-quality-fair'; }
+        else { label = 'POOR'; cssClass = 'speed-meter-quality-poor'; }
+
+        this._netQualityBadge.set_text(label);
+        for (const c of ['speed-meter-quality-measuring', 'speed-meter-quality-excellent', 'speed-meter-quality-good', 'speed-meter-quality-fair', 'speed-meter-quality-poor']) {
+            this._netQualityBadge.remove_style_class_name(c);
+        }
+        this._netQualityBadge.add_style_class_name(cssClass);
+
+        if (this._netQualityPingVal) this._netQualityPingVal.set_text(`${Math.round(avg)} ms`);
+        if (this._netQualityJitterVal) this._netQualityJitterVal.set_text(`±${jitter.toFixed(1)} ms`);
+    }
+
     private _buildSpeedTestPanel(): PopupMenu.PopupBaseMenuItem {
         const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-ookla-panel' });
         const container = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-box' });
@@ -1068,6 +1178,34 @@ export default class SpeedMeterExtension extends Extension {
         });
         this._speedTestDropdownScroll.set_child(listContainer);
 
+        // ── Phase Indicator ────────────────────────────────────────────────────
+        const phaseRow = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'speed-meter-ookla-phase-row',
+        });
+        this._speedTestPhaseLabels = [];
+        const phaseNames = ['Resolve', 'Latency', 'Download', 'Upload'];
+        phaseNames.forEach((name, i) => {
+            if (i > 0) {
+                phaseRow.add_child(new St.Label({
+                    text: '·',
+                    style_class: 'speed-meter-ookla-phase-sep',
+                    x_expand: true,
+                    x_align: Clutter.ActorAlign.CENTER,
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+            }
+            const lbl = new St.Label({
+                text: name,
+                style_class: 'speed-meter-ookla-phase-step speed-meter-ookla-phase-pending',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._speedTestPhaseLabels.push(lbl);
+            phaseRow.add_child(lbl);
+        });
+
         // ── Ping / Jitter / Loss Strip ──────────────────────────────────────
         const pingStrip = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
@@ -1130,6 +1268,20 @@ export default class SpeedMeterExtension extends Extension {
         gaugesRow.add_child(downCard);
         gaugesRow.add_child(upCard);
 
+        // ── Progress Track ──────────────────────────────────────────────────
+        const progressTrack = new St.Widget({
+            style_class: 'speed-meter-ookla-progress-track',
+            x_expand: true,
+            clip_to_allocation: true,
+        });
+        this._speedTestProgressFill = new St.Widget({
+            style_class: 'speed-meter-ookla-progress-fill',
+            x_expand: true,
+        });
+        this._speedTestProgressFill.set_pivot_point(0.0, 0.0);
+        this._speedTestProgressFill.set_scale(0, 1.0);
+        progressTrack.add_child(this._speedTestProgressFill);
+
         // ── Status Banner ───────────────────────────────────────────────────
         const statusBox = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
@@ -1170,15 +1322,21 @@ export default class SpeedMeterExtension extends Extension {
         goBtnInner.add_child(this._speedTestRunBtnLabel);
         goBtn.set_child(goBtnInner);
         goBtn.connect('clicked', () => {
-            this._runFullSpeedTest();
+            if (this._isTestingSpeed) {
+                this._cancelSpeedTest();
+            } else {
+                this._runFullSpeedTest();
+            }
         });
 
         // ── Assemble ─────────────────────────────────────────────────────────
         container.add_child(header);
         container.add_child(serverDropdownBtn);
         container.add_child(this._speedTestDropdownScroll);
+        container.add_child(phaseRow);
         container.add_child(pingStrip);
         container.add_child(gaugesRow);
+        container.add_child(progressTrack);
         container.add_child(statusBox);
         container.add_child(goBtn);
 
@@ -1201,6 +1359,69 @@ export default class SpeedMeterExtension extends Extension {
         return { container, valueLabel };
     }
 
+
+    private _setSpeedTestPhase(idx: number): void {
+        this._speedTestPhaseLabels.forEach((lbl, i) => {
+            lbl.remove_style_class_name('speed-meter-ookla-phase-pending');
+            lbl.remove_style_class_name('speed-meter-ookla-phase-active');
+            lbl.remove_style_class_name('speed-meter-ookla-phase-done');
+            if (idx < 0 || i > idx) {
+                lbl.add_style_class_name('speed-meter-ookla-phase-pending');
+            } else if (i === idx) {
+                lbl.add_style_class_name('speed-meter-ookla-phase-active');
+            } else {
+                lbl.add_style_class_name('speed-meter-ookla-phase-done');
+            }
+        });
+    }
+
+    private _cancelSpeedTest(): void {
+        if (this._speedTestCancellable) {
+            this._speedTestCancellable.cancel();
+        }
+        this._stopProgressBar();
+        this._isTestingSpeed = false;
+        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('START TEST');
+        if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('Test cancelled — press START TEST to try again');
+        this._setSpeedTestPhase(-1);
+    }
+
+    private _startProgressBar(durationMs: number, phase: 'download' | 'upload'): void {
+        this._stopProgressBar();
+        if (!this._speedTestProgressFill) return;
+        this._speedTestProgressFill.remove_style_class_name('progress-download');
+        this._speedTestProgressFill.remove_style_class_name('progress-upload');
+        this._speedTestProgressFill.add_style_class_name(phase === 'download' ? 'progress-download' : 'progress-upload');
+        this._speedTestProgressFill.set_scale(0, 1.0);
+        const startTime = GLib.get_monotonic_time();
+        let timerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+            const elapsed = (GLib.get_monotonic_time() - startTime) / 1000;
+            const pct = Math.min(elapsed / durationMs, 1.0);
+            if (this._speedTestProgressFill) {
+                this._speedTestProgressFill.set_scale(pct, 1.0);
+            }
+            if (pct >= 1.0) {
+                this._speedTestSourceIds.delete(timerId);
+                if (this._speedTestProgressTimeoutId === timerId) this._speedTestProgressTimeoutId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
+            return GLib.SOURCE_CONTINUE;
+        });
+        this._speedTestProgressTimeoutId = timerId;
+        this._speedTestSourceIds.add(timerId);
+    }
+
+    private _stopProgressBar(): void {
+        if (this._speedTestProgressTimeoutId) {
+            if (this._speedTestSourceIds.delete(this._speedTestProgressTimeoutId)) {
+                GLib.Source.remove(this._speedTestProgressTimeoutId);
+            }
+            this._speedTestProgressTimeoutId = 0;
+        }
+        if (this._speedTestProgressFill) {
+            this._speedTestProgressFill.set_scale(0, 1.0);
+        }
+    }
 
     private _notify(msg: string, details?: string): void {
         try {
@@ -1570,13 +1791,14 @@ export default class SpeedMeterExtension extends Extension {
         this._speedTestCancellable = new Gio.Cancellable();
 
         this._setSpeedTestDropdownOpen(false);
-        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('TESTING...');
+        if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('CANCEL');
         if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('RESOLVING SERVER...');
         if (this._speedTestPingVal) this._speedTestPingVal.set_text('Testing...');
         if (this._speedTestJitterVal) this._speedTestJitterVal.set_text('Testing...');
         if (this._speedTestLossVal) this._speedTestLossVal.set_text('--');
         if (this._speedTestDownVal) this._speedTestDownVal.set_text('--');
         if (this._speedTestUpVal) this._speedTestUpVal.set_text('--');
+        this._setSpeedTestPhase(0);
 
         this._fetchOoklaServer((server) => {
             if (!server) {
@@ -1599,6 +1821,7 @@ export default class SpeedMeterExtension extends Extension {
                 this._speedTestServerSub.set_text(text);
             }
 
+            this._setSpeedTestPhase(1);
             if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING LATENCY...');
 
             this._runOoklaLatencyTest(server.host, (avgPing, mdevPing, lossVal) => {
@@ -1606,6 +1829,8 @@ export default class SpeedMeterExtension extends Extension {
                 if (this._speedTestJitterVal) this._speedTestJitterVal.set_text(mdevPing);
                 if (this._speedTestLossVal) this._speedTestLossVal.set_text(lossVal !== null ? `${Math.round(lossVal)}%` : 'N/A');
 
+                this._setSpeedTestPhase(2);
+                this._startProgressBar(7000, 'download');
                 if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING DOWNLOAD SPEED...');
 
                 this._runOoklaThroughputTest(server.host, 'download', 7000, 3, (curMbps) => {
@@ -1617,6 +1842,8 @@ export default class SpeedMeterExtension extends Extension {
                         this._speedTestDownVal.set_text(downMbps === '0.0' ? '--' : downMbps);
                     }
 
+                    this._setSpeedTestPhase(3);
+                    this._startProgressBar(6000, 'upload');
                     if (this._speedTestQualityVal) this._speedTestQualityVal.set_text('TESTING UPLOAD SPEED...');
 
                     this._runOoklaThroughputTest(server.host, 'upload', 6000, 3, (curMbps) => {
@@ -1636,6 +1863,8 @@ export default class SpeedMeterExtension extends Extension {
     }
 
     private _finishSpeedTest(downMbps: string, upMbps: string, avgPing: string): void {
+        this._stopProgressBar();
+        this._setSpeedTestPhase(4);
         this._isTestingSpeed = false;
         if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('RUN AGAIN');
 
@@ -1967,6 +2196,15 @@ export default class SpeedMeterExtension extends Extension {
             GLib.Source.remove(this._saveTimeoutId);
             this._saveTimeoutId = 0;
         }
+        if (this._netQualityTimeoutId) {
+            GLib.Source.remove(this._netQualityTimeoutId);
+            this._netQualityTimeoutId = 0;
+        }
+        if (this._speedTestProgressTimeoutId) {
+            this._speedTestSourceIds.delete(this._speedTestProgressTimeoutId);
+            GLib.Source.remove(this._speedTestProgressTimeoutId);
+            this._speedTestProgressTimeoutId = 0;
+        }
         for (const id of this._speedTestSourceIds) GLib.Source.remove(id);
         this._speedTestSourceIds.clear();
 
@@ -2043,10 +2281,22 @@ export default class SpeedMeterExtension extends Extension {
         this._speedTestDownVal = null;
         this._activeAppLabel?.destroy();
         this._activeAppLabel = null;
+        this._netQualityBadge?.destroy();
+        this._netQualityBadge = null;
+        this._netQualityPingVal?.destroy();
+        this._netQualityPingVal = null;
+        this._netQualityJitterVal?.destroy();
+        this._netQualityJitterVal = null;
+        this._netQualityPingSamples = [];
         this._upLabel?.destroy();
         this._upLabel = null;
         this._speedTestQualityVal?.destroy();
         this._speedTestQualityVal = null;
+        for (const lbl of this._speedTestPhaseLabels) lbl.destroy();
+        this._speedTestPhaseLabels = [];
+        this._speedTestProgressFill?.destroy();
+        this._speedTestProgressFill = null;
+        this._speedTestProgressTimeoutId = 0;
         this._sepLabel?.destroy();
         this._sepLabel = null;
         this._downLabel?.destroy();
