@@ -791,7 +791,11 @@ export default class SpeedMeterExtension extends Extension {
                 if (this._ifaceValue) this._ifaceValue.set_text(`${type} (${iface || 'none'})`);
 
                 this._continueUpdateNetworkInfo(iface);
-            } catch (e) {}
+            } catch (e) {
+                const ge = e as GLib.Error;
+                if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                    logError(e as Error, 'SpeedMeter: Failed to read route table');
+            }
         });
     }
 
@@ -850,7 +854,11 @@ export default class SpeedMeterExtension extends Extension {
                     const local = conn.get_local_address() as Gio.InetSocketAddress;
                     this._ipValue?.set_text(local.get_address().to_string());
                     conn.close_async(GLib.PRIORITY_DEFAULT, null, null);
-                } catch (e) {}
+                } catch (e) {
+                    const ge = e as GLib.Error;
+                    if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                        logError(e as Error, 'SpeedMeter: Failed to get local IP');
+                }
             });
         }
 
@@ -894,7 +902,11 @@ export default class SpeedMeterExtension extends Extension {
                             return;
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    const ge = e as GLib.Error;
+                    if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                        logError(e as Error, 'SpeedMeter: Public IP primary fetch failed');
+                }
 
                 this._fetchPublicIpFallback();
             }
@@ -925,7 +937,11 @@ export default class SpeedMeterExtension extends Extension {
                             return;
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    const ge = e as GLib.Error;
+                    if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                        logError(e as Error, 'SpeedMeter: Public IP fallback fetch failed');
+                }
 
                 if (this._publicIpValue) {
                     this._publicIpValue.set_text('Unavailable');
@@ -951,7 +967,9 @@ export default class SpeedMeterExtension extends Extension {
                     return;
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            logError(e as Error, 'SpeedMeter: Failed to get active app');
+        }
         this._activeAppName = 'System';
         if (this._activeAppLabel) this._activeAppLabel.set_text('System');
     }
@@ -977,7 +995,11 @@ export default class SpeedMeterExtension extends Extension {
                 this._netQualityPingSamples.push(rtt);
                 if (this._netQualityPingSamples.length > 5) this._netQualityPingSamples.shift();
                 this._updateNetQualityDisplay();
-            } catch (e) {}
+            } catch (e) {
+                const ge = e as GLib.Error;
+                if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                    logError(e as Error, 'SpeedMeter: Net quality probe failed');
+            }
         });
     }
 
@@ -1558,7 +1580,11 @@ export default class SpeedMeterExtension extends Extension {
                                                 ping: elapsedMs,
                                             });
                                         }
-                                    } catch (e) {}
+                                    } catch (e) {
+                                        const ge = e as GLib.Error;
+                                        if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                                            logError(e as Error, 'SpeedMeter: Ookla candidate probe failed');
+                                    }
                                     remaining--;
                                     if (remaining <= 0) finalize();
                                 });
@@ -1566,7 +1592,11 @@ export default class SpeedMeterExtension extends Extension {
                             return;
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    const ge = e as GLib.Error;
+                    if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                        logError(e as Error, 'SpeedMeter: Ookla server list fetch failed');
+                }
                 resolve(null);
             });
         });
@@ -1719,7 +1749,9 @@ export default class SpeedMeterExtension extends Extension {
                                 bytes = result.get_size();
                                 ok = true;
                             }
-                        } catch (e) {}
+                        } catch (_e) {
+                            // Per-chunk network failure is expected; ok=false signals workerStep to downsize
+                        }
                         onReqDone(bytes, ok);
                     });
                 } else {
@@ -1733,7 +1765,9 @@ export default class SpeedMeterExtension extends Extension {
                         try {
                             sess?.send_and_read_finish(res);
                             ok = msg.get_status() === Soup.Status.OK;
-                        } catch (e) {}
+                        } catch (_e) {
+                            // Per-chunk network failure is expected; ok=false signals workerStep to downsize
+                        }
                         onReqDone(ok ? size : 0, ok);
                     });
                 }
@@ -1895,10 +1929,14 @@ export default class SpeedMeterExtension extends Extension {
                                 this._restartTimer();
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        logError(e as Error, 'SpeedMeter: Failed to unpack UPower reply');
+                    }
                 }
             );
-        } catch (e) {}
+        } catch (e) {
+            logError(e as Error, 'SpeedMeter: Failed to call UPower D-Bus');
+        }
     }
 
     private _restartTimer(): void {
@@ -2089,7 +2127,11 @@ export default class SpeedMeterExtension extends Extension {
                 this._prevRx = rx;
                 this._prevTx = tx;
                 this._prevTime = now;
-            } catch (e) {}
+            } catch (e) {
+                const ge = e as GLib.Error;
+                if (!ge.matches || !ge.matches(Gio.io_error_quark(), Gio.IOErrorEnum.CANCELLED))
+                    logError(e as Error, 'SpeedMeter: Tick failed reading /proc/net/dev');
+            }
         });
     }
 
