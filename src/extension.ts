@@ -47,12 +47,7 @@ interface OoklaServer {
     sponsor: string;
 }
 
-// Curated set of real-world locations used to bias Ookla's public server-list
-// API (speedtest.net) toward a specific region. "Auto" omits lat/lon so the
-// API falls back to GeoIP-based nearest-server selection, exactly like the
-// official Speedtest apps/CLI. The actual server (sponsor/host) within a
-// region is resolved live on every test run - these are just the regional
-// anchors the user picks between.
+// lat/lon anchors for Ookla server selection; null = GeoIP auto
 const SPEEDTEST_LOCATIONS: SpeedTestLocation[] = [
     { label: 'Auto · Nearest', lat: null, lon: null },
     { label: 'New York, US', lat: 40.7128, lon: -74.0060 },
@@ -68,10 +63,6 @@ const SPEEDTEST_LOCATIONS: SpeedTestLocation[] = [
     { label: 'Sydney, AU', lat: -33.8688, lon: 151.2093 },
 ];
 
-/**
- * HIGH-PERFORMANCE INTERNET SPEED METER
- * Optimized for minimal CPU/Memory/RAM footprint.
- */
 export default class SpeedMeterExtension extends Extension {
     private _prevRx: number = 0;
     private _prevTx: number = 0;
@@ -274,7 +265,6 @@ export default class SpeedMeterExtension extends Extension {
             (this._indicator.menu as any).box.add_style_class_name('speed-meter-menu-container');
         }
 
-        // --- DASHBOARD SECTION (Grid + Graph) ---
         const dashboardBox = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
@@ -288,7 +278,6 @@ export default class SpeedMeterExtension extends Extension {
             style_class: 'speed-meter-dashboard-header'
         });
 
-        // 2x2 Grid for Network Info
         const infoGrid = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-network-info-grid' });
         
         const row1 = new St.BoxLayout({ orientation: Clutter.Orientation.HORIZONTAL, x_expand: true, style_class: 'speed-meter-network-row' });
@@ -311,7 +300,6 @@ export default class SpeedMeterExtension extends Extension {
         infoGrid.add_child(row1);
         infoGrid.add_child(row2);
 
-        // Active Application Pill Bar
         const appTrackerBar = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
@@ -334,7 +322,6 @@ export default class SpeedMeterExtension extends Extension {
         appTrackerBar.add_child(appTitle);
         appTrackerBar.add_child(this._activeAppLabel);
 
-        // Network Quality Monitor Strip
         const qualityStrip = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
@@ -383,13 +370,11 @@ export default class SpeedMeterExtension extends Extension {
         headerBox.add_child(appTrackerBar);
         dashboardBox.add_child(headerBox);
 
-        // Integrated Graph with Segmented Tab Bar
         const graphWrapper = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             style_class: 'speed-meter-graph-container'
         });
 
-        // Tab Switcher Row
         const tabsBar = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
@@ -429,11 +414,9 @@ export default class SpeedMeterExtension extends Extension {
         this._dashboardItem.add_child(dashboardBox);
         (this._indicator.menu as any).addMenuItem(this._dashboardItem);
 
-        // Dedicated Speedtest Panel View Item
         this._speedTestPanelItem = this._buildSpeedTestPanel();
         (this._indicator.menu as any).addMenuItem(this._speedTestPanelItem);
 
-        // --- STATS SECTION (Single Unified Card) ---
         const statsBox = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
@@ -464,7 +447,6 @@ export default class SpeedMeterExtension extends Extension {
         this._statsSectionItem.add_child(statsBox);
         (this._indicator.menu as any).addMenuItem(this._statsSectionItem);
 
-        // Action Buttons Row (Reset, Speedtest, Settings)
         const actionsBox = new St.BoxLayout({
             style_class: 'speed-meter-actions-bar',
             orientation: Clutter.Orientation.HORIZONTAL,
@@ -564,10 +546,8 @@ export default class SpeedMeterExtension extends Extension {
         for (const actor of actors) {
             if (!actor) continue;
             const a = (actor as any).actor ?? actor;
-            if (typeof (a as any).add_style_class_name === 'function') {
-                (a as any).add_style_class_name(light ? 'light-mode' : 'dark-mode');
-                (a as any).remove_style_class_name(light ? 'dark-mode' : 'light-mode');
-            }
+            (a as any).add_style_class_name(light ? 'light-mode' : 'dark-mode');
+            (a as any).remove_style_class_name(light ? 'dark-mode' : 'light-mode');
         }
         this._activityGraph?.setLightMode(light);
         this._updateVpnStyle();
@@ -597,10 +577,8 @@ export default class SpeedMeterExtension extends Extension {
         for (const actor of [this._box, menuActor, menuBox, this._dashboardBox, this._statsBox]) {
             if (!actor) continue;
             const a = (actor as any).actor ?? actor;
-            if (typeof (a as any).add_style_class_name === 'function') {
-                if (this._currentAccentClass) (a as any).remove_style_class_name(this._currentAccentClass);
-                (a as any).add_style_class_name(nextClass);
-            }
+            if (this._currentAccentClass) (a as any).remove_style_class_name(this._currentAccentClass);
+            (a as any).add_style_class_name(nextClass);
         }
         this._currentAccentClass = nextClass;
     }
@@ -764,7 +742,6 @@ export default class SpeedMeterExtension extends Extension {
         if (now - this._lastNetworkUpdate < 30) return;
         this._lastNetworkUpdate = now;
         
-        // 1. Get Interface & Connection Type (Async)
         const routeFile = Gio.File.new_for_path('/proc/net/route');
         routeFile.load_contents_async(null, (file, res) => {
             try {
@@ -788,15 +765,12 @@ export default class SpeedMeterExtension extends Extension {
                 }
                 if (this._ifaceValue) this._ifaceValue.set_text(`${type} (${iface || 'none'})`);
 
-                // Chain the rest of the async checks
                 this._continueUpdateNetworkInfo(iface);
             } catch (e) {}
         });
     }
 
     private _continueUpdateNetworkInfo(iface: string): void {
-        // 2. Enhanced Smart VPN & Mesh Network Inspector
-        // Interface names from /proc/net/dev (no `ip` subprocess needed)
         Gio.File.new_for_path(PROC_NET_DEV).load_contents_async(this._soupCancellable, (file, res) => {
             let ifaceNames = '';
             try {
@@ -838,7 +812,6 @@ export default class SpeedMeterExtension extends Extension {
             }
         });
 
-        // 3. Async Local IP
         if (iface) {
             const client = new Gio.SocketClient({
                 family: Gio.SocketFamily.IPV4,
@@ -856,10 +829,7 @@ export default class SpeedMeterExtension extends Extension {
             });
         }
 
-        // 4. Async Public IP (Soup 3)
         this._fetchPublicIp();
-
-        // 5. Update Active Application tracking
         this._updateActiveApp();
     }
 
@@ -1014,8 +984,6 @@ export default class SpeedMeterExtension extends Extension {
         const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false, style_class: 'speed-meter-ookla-panel' });
         const container = new St.BoxLayout({ orientation: Clutter.Orientation.VERTICAL, x_expand: true, style_class: 'speed-meter-ookla-box' });
 
-        // ── Header ──────────────────────────────────────────────────────────
-        // Left: SPEEDTEST brand  |  Right: close button
         const header = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
@@ -1056,7 +1024,6 @@ export default class SpeedMeterExtension extends Extension {
         header.add_child(brandStack);
         header.add_child(closeBtn);
 
-        // ── Server Dropdown Trigger ──────────────────────────────────────────
         const serverDropdownBtn = new St.Button({
             style_class: 'speed-meter-server-dropdown-btn',
             x_expand: true,
@@ -1116,7 +1083,6 @@ export default class SpeedMeterExtension extends Extension {
             this._setSpeedTestDropdownOpen(!isOpen);
         });
 
-        // ── Dropdown List ───────────────────────────────────────────────────
         const listContainer = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             style_class: 'speed-meter-server-dropdown-list',
@@ -1178,7 +1144,6 @@ export default class SpeedMeterExtension extends Extension {
         });
         this._speedTestDropdownScroll.set_child(listContainer);
 
-        // ── Phase Indicator ────────────────────────────────────────────────────
         const phaseRow = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
@@ -1206,7 +1171,6 @@ export default class SpeedMeterExtension extends Extension {
             phaseRow.add_child(lbl);
         });
 
-        // ── Ping / Jitter / Loss Strip ──────────────────────────────────────
         const pingStrip = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
@@ -1224,14 +1188,12 @@ export default class SpeedMeterExtension extends Extension {
         pingStrip.add_child(jitterBox.container);
         pingStrip.add_child(lossBox.container);
 
-        // ── Speed Gauges Row ────────────────────────────────────────────────
         const gaugesRow = new St.BoxLayout({
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
             style_class: 'speed-meter-ookla-gauges-row',
         });
 
-        // Download Card
         const downCard = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
@@ -1248,7 +1210,6 @@ export default class SpeedMeterExtension extends Extension {
         downCard.add_child(this._speedTestDownVal);
         downCard.add_child(downUnit);
 
-        // Upload Card
         const upCard = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
@@ -1268,7 +1229,6 @@ export default class SpeedMeterExtension extends Extension {
         gaugesRow.add_child(downCard);
         gaugesRow.add_child(upCard);
 
-        // ── Progress Track ──────────────────────────────────────────────────
         const progressTrack = new St.Widget({
             style_class: 'speed-meter-ookla-progress-track',
             x_expand: true,
@@ -1282,7 +1242,6 @@ export default class SpeedMeterExtension extends Extension {
         this._speedTestProgressFill.set_scale(0, 1.0);
         progressTrack.add_child(this._speedTestProgressFill);
 
-        // ── Status Banner ───────────────────────────────────────────────────
         const statusBox = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
@@ -1295,7 +1254,6 @@ export default class SpeedMeterExtension extends Extension {
         });
         statusBox.add_child(this._speedTestQualityVal);
 
-        // ── Action Button ────────────────────────────────────────────────────
         const goBtn = new St.Button({
             style_class: 'speed-meter-ookla-go-button',
             x_expand: true,
@@ -1329,7 +1287,6 @@ export default class SpeedMeterExtension extends Extension {
             }
         });
 
-        // ── Assemble ─────────────────────────────────────────────────────────
         container.add_child(header);
         container.add_child(serverDropdownBtn);
         container.add_child(this._speedTestDropdownScroll);
@@ -1425,9 +1382,7 @@ export default class SpeedMeterExtension extends Extension {
 
     private _notify(msg: string, details?: string): void {
         try {
-            if (typeof Main.notify === 'function') {
-                Main.notify(msg, details);
-            }
+            Main.notify(msg, details);
         } catch (e) {
             logError(e as Error, 'SpeedMeter: Notification error');
         }
@@ -1600,7 +1555,6 @@ export default class SpeedMeterExtension extends Extension {
         );
     }
 
-    // Measures latency against the Ookla server's own latency.txt endpoint
     private _runOoklaLatencyTest(
         host: string,
         callback: (avgMs: string, jitterMs: string, lossPct: number | null) => void
@@ -1658,8 +1612,6 @@ export default class SpeedMeterExtension extends Extension {
         step();
     }
 
-    // Runs `concurrency` parallel streams against the real Ookla server with
-    // adaptive chunk sizing and real-time live speed updates.
     private _runOoklaThroughputTest(
         host: string,
         mode: 'download' | 'upload',
@@ -1868,7 +1820,6 @@ export default class SpeedMeterExtension extends Extension {
         this._isTestingSpeed = false;
         if (this._speedTestRunBtnLabel) this._speedTestRunBtnLabel.set_text('RUN AGAIN');
 
-        // Calculate Rating
         const dVal = parseFloat(downMbps) || 0;
         let rating = 'TEST COMPLETE — OPTIMAL FOR 4K STREAMING';
         if (dVal <= 0) rating = 'TEST FAILED — CHECK CONNECTION';
@@ -1887,7 +1838,6 @@ export default class SpeedMeterExtension extends Extension {
         const totalStr = this._fmtSize(rx + tx);
         const subStr = `(\u2193 ${this._fmtSize(rx)}  \u2191 ${this._fmtSize(tx)})`;
         
-        // Change Guard: Only update if strings differ to save CPU/Layout work
         if (stat.lastTotal !== totalStr) {
             stat.valueLabel.set_text(totalStr);
             stat.lastTotal = totalStr;
@@ -2020,10 +1970,6 @@ export default class SpeedMeterExtension extends Extension {
         }
     }
 
-    /**
-     * Highly optimized polling logic.
-     * Uses a lightweight parser to avoid large string allocations.
-     */
     private _tick(): void {
         if (!this._indicator || !this._procFile || !this._downLabel || !this._upLabel) return;
 
@@ -2092,12 +2038,10 @@ export default class SpeedMeterExtension extends Extension {
                 const rxs = deltaRx / dt;
                 const txs = deltaTx / dt;
 
-                // Push live sample to 60-second Bezier wave graph
                 if (this._activityGraph) {
                     this._activityGraph.pushRealtimeSample(rxs, txs);
                 }
 
-                // Auto-hide when network speed is below idle threshold
                 const totalKbps = (rxs + txs) / KB;
                 const isIdle = this._autoHideIdle && totalKbps < this._idleThresholdKb;
                 if (this._box) {
@@ -2107,7 +2051,6 @@ export default class SpeedMeterExtension extends Extension {
                     this._indicator.visible = !isIdle;
                 }
 
-                // Monthly Data Quota Warning Check
                 this._checkQuota();
 
                 if (this._indicator && (this._indicator.menu as any).isOpen) {

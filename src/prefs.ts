@@ -22,21 +22,18 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
 
         const settings = this.getSettings();
 
-        // ================= PAGE 1: DISPLAY & MONITOR =================
         const displayPage = new Adw.PreferencesPage({
             title: 'Display & Monitor',
             iconName: 'preferences-desktop-display-symbolic',
         });
         window.add(displayPage);
 
-        // --- General Settings Group ---
         const generalGroup = new Adw.PreferencesGroup({
             title: 'General',
             description: 'Configure network speed sampling rate and measurement units.',
         });
         displayPage.add(generalGroup);
 
-        // Refresh Interval
         const refreshRow = new Adw.ActionRow({
             title: 'Refresh Interval (ms)',
             subtitle: 'Lower values are more responsive but use more CPU (default: 1500)',
@@ -55,14 +52,12 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         refreshRow.add_suffix(refreshSpin);
         generalGroup.add(refreshRow);
 
-        // Monitored Interface
         const ifaceRow = new Adw.EntryRow({
             title: 'Monitored Interface',
         });
         settings.bind('monitored-interface', ifaceRow, 'text', Gio.SettingsBindFlags.DEFAULT);
         generalGroup.add(ifaceRow);
 
-        // Use Bits instead of Bytes
         const bitsRow = new Adw.SwitchRow({
             title: 'Display in Bits (Mbps / Kbps)',
             subtitle: 'Show speeds in bits per second instead of bytes per second',
@@ -70,7 +65,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('use-bits', bitsRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         generalGroup.add(bitsRow);
 
-        // Adaptive Power Saver
         const powerRow = new Adw.SwitchRow({
             title: 'Adaptive Power &amp; Battery Saver',
             subtitle: 'Automatically reduce polling frequency when on battery power to conserve energy',
@@ -78,14 +72,12 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('adaptive-power-saver', powerRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         generalGroup.add(powerRow);
 
-        // --- Visibility & Auto-Hide Group ---
         const visibilityGroup = new Adw.PreferencesGroup({
             title: 'Visibility &amp; Auto-Hide',
             description: 'Customize top panel speed indicators and idle behavior.',
         });
         displayPage.add(visibilityGroup);
 
-        // Show Download
         const downloadRow = new Adw.SwitchRow({
             title: 'Show Download Speed',
             subtitle: 'Display incoming bandwidth rate on the top panel',
@@ -93,7 +85,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('show-download', downloadRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(downloadRow);
 
-        // Show Upload
         const uploadRow = new Adw.SwitchRow({
             title: 'Show Upload Speed',
             subtitle: 'Display outgoing bandwidth rate on the top panel',
@@ -101,7 +92,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('show-upload', uploadRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(uploadRow);
 
-        // Show Top Apps
         const topAppsRow = new Adw.SwitchRow({
             title: 'Show Active Applications',
             subtitle: 'Identify and display top network processes in the dropdown menu',
@@ -109,7 +99,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('show-top-apps', topAppsRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(topAppsRow);
 
-        // Auto-Hide Idle
         const autoHideRow = new Adw.SwitchRow({
             title: 'Auto-Hide When Idle',
             subtitle: 'Temporarily hide panel speed numbers when total speed is below threshold',
@@ -117,7 +106,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('auto-hide-idle', autoHideRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         visibilityGroup.add(autoHideRow);
 
-        // Idle Threshold
         const idleSpinRow = new Adw.ActionRow({
             title: 'Idle Threshold (KB/s)',
             subtitle: 'Speed threshold under which panel indicators hide',
@@ -136,21 +124,18 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         idleSpinRow.add_suffix(idleSpin);
         visibilityGroup.add(idleSpinRow);
 
-        // ================= PAGE 2: DATA & HISTORY =================
         const dataPage = new Adw.PreferencesPage({
             title: 'Data & History',
             iconName: 'document-save-symbolic',
         });
         window.add(dataPage);
 
-        // --- Data Quota & Alerts Group ---
         const quotaGroup = new Adw.PreferencesGroup({
             title: 'Data Quota &amp; Alerts',
             description: 'Set monthly traffic limits and desktop warning notifications.',
         });
         dataPage.add(quotaGroup);
 
-        // Monthly Data Quota (GB)
         const quotaRow = new Adw.ActionRow({
             title: 'Monthly Data Quota (GB)',
             subtitle: 'Set to 0 to disable quota tracking and progress bar',
@@ -169,7 +154,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         quotaRow.add_suffix(quotaSpin);
         quotaGroup.add(quotaRow);
 
-        // Quota Notifications
         const notifyRow = new Adw.SwitchRow({
             title: 'Desktop Quota Notifications',
             subtitle: 'Show system desktop notifications when reaching 80% and 100% of quota',
@@ -177,7 +161,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         settings.bind('quota-notify', notifyRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         quotaGroup.add(notifyRow);
 
-        // --- Data Management & Export ---
         const dataGroup = new Adw.PreferencesGroup({
             title: 'Data Export',
             description: 'Export traffic usage history logs to CSV format.',
@@ -229,7 +212,6 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         exportRow.add_suffix(exportBtn);
         dataGroup.add(exportRow);
 
-        // --- Monthly App Usage History Group ---
         const appGroup = new Adw.PreferencesGroup({
             title: 'Monthly Application Traffic',
             description: 'Top applications consuming bandwidth during the current month.',

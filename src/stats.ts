@@ -106,7 +106,6 @@ export class StatsManager {
             return;
         }
         const json = JSON.stringify(this._history);
-        // Optimization: Skip disk I/O if data hasn't changed since last save
         if (json === this._lastSavedJson) return;
 
         this._saving = true;
@@ -173,15 +172,11 @@ export class StatsManager {
         this._updateKey(this._history.daily, dayKey, rxBytes, txBytes);
         this._updateKey(this._history.monthly, monthKey, rxBytes, txBytes);
 
-        // Optimization: Periodic pruning of very old data (once per hour roughly)
         if (now.getMinutes() === 0 && now.getSeconds() < 2) {
             this._pruneHistory();
         }
     }
 
-    /**
-     * Accumulates monthly traffic per application.
-     */
     updateAppUsage(appName: string, bytes: number): void {
         if (!appName || bytes <= 0) return;
         const monthKey = this._getDayKey(new Date()).substring(0, 7);
@@ -191,9 +186,6 @@ export class StatsManager {
         this._history.appUsage[monthKey][appName] = current + bytes;
     }
 
-    /**
-     * Returns monthly app bandwidth usage sorted by highest traffic.
-     */
     getMonthlyAppUsage(): { appName: string; bytes: number }[] {
         const monthKey = this._getDayKey(new Date()).substring(0, 7);
         const dict = (this._history.appUsage && this._history.appUsage[monthKey]) || {};
@@ -202,9 +194,6 @@ export class StatsManager {
         return list;
     }
 
-    /**
-     * Exports daily and monthly historical statistics to CSV format.
-     */
     exportToCsv(): string {
         const lines: string[] = ['Date,Type,Download_Bytes,Upload_Bytes,Total_Bytes'];
         
@@ -223,13 +212,9 @@ export class StatsManager {
         return lines.join('\n');
     }
 
-    /**
-     * Keeps the memory and disk footprint lean by removing data older than 1 year.
-     */
     private _pruneHistory(): void {
         const threshold = Date.now() - (365 * 24 * 60 * 60 * 1000);
         
-        // Prune Daily
         for (const key in this._history.daily) {
             if (new Date(key).getTime() < threshold) {
                 delete this._history.daily[key];
