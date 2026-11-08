@@ -6,14 +6,10 @@ import GObject from 'gi://GObject';
 import Pango from 'gi://Pango';
 import PangoCairo from 'gi://PangoCairo';
 import St from 'gi://St';
-import { StatsManager, TrafficData } from './stats.js';
+import { StatsManager, TrafficData, KB, MB, fmtSize } from './stats.js';
 
 export type GraphMode = 'realtime' | 'monthly';
 
-/**
- * HIGH-PERFORMANCE Dual-Mode Graph Widget (Live 60s Bezier Wave + Monthly History).
- * Optimized with Cairo rendering and Bezier curve smoothing.
- */
 class ActivityGraphImpl extends St.DrawingArea {
     private _mode: GraphMode = 'realtime';
     private _dailyData: number[] = [];
@@ -21,12 +17,11 @@ class ActivityGraphImpl extends St.DrawingArea {
     private _lastUpdateDay: number = -1;
     private _lightMode: boolean = false;
 
-    // Real-time 60-second rolling sample buffer
     private _rxBuffer: number[] = new Array(60).fill(0);
     private _txBuffer: number[] = new Array(60).fill(0);
 
-    _init() {
-        super._init({
+    constructor() {
+        super({
             style_class: 'speed-meter-graph',
             can_focus: false,
             reactive: true,
@@ -75,9 +70,6 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
     }
 
-    /**
-     * Push a new real-time speed tick (bytes/sec) into the 60s rolling buffer.
-     */
     pushRealtimeSample(rxs: number, txs: number): void {
         this._rxBuffer.shift();
         this._rxBuffer.push(Math.max(0, rxs));
@@ -90,9 +82,6 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
     }
 
-    /**
-     * Efficiently updates monthly stats with lazy-caching.
-     */
     updateFromStats(stats: StatsManager): void {
         const now = new Date();
         const currentDay = now.getDate();
@@ -105,7 +94,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
         const newDailyData: number[] = [];
-        let peak = 1024 * 1024 * 10; // 10 MB floor
+        let peak = 10 * MB; // 10 MB floor
 
         const dailyHistory = stats.getDailyData();
 
@@ -159,9 +148,6 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
     }
 
-    /**
-     * Renders a fluid 60-second real-time Bezier wave graph for RX and TX speeds.
-     */
     private _drawRealtimeGraph(cr: any, w: number, h: number): void {
         const maxRx = Math.max(...this._rxBuffer, 1024 * 10); // Minimum 10 KB/s scale
         const maxTx = Math.max(...this._txBuffer, 1024 * 10);
@@ -172,7 +158,6 @@ class ActivityGraphImpl extends St.DrawingArea {
         const count = this._rxBuffer.length;
         const stepX = w / (count - 1);
 
-        // Subtle background grid
         cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
@@ -182,31 +167,23 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.stroke();
         }
 
-        // Draw RX Curve (Download)
         this._drawBezierWave(cr, this._rxBuffer, peakSpeed, stepX, bottomY, graphH, this._waveColor('rx'));
-
-        // Draw TX Curve (Upload)
         this._drawBezierWave(cr, this._txBuffer, peakSpeed, stepX, bottomY, graphH, this._waveColor('tx'));
 
-        // Top Header Info with neon bullets
         const currentRx = this._rxBuffer[count - 1];
         const currentTx = this._txBuffer[count - 1];
 
-        // Download pill
         const [rxR, rxG, rxB] = this._waveColor('rx');
         cr.setSourceRGBA(rxR, rxG, rxB, 0.95);
         const rxWidth = this._text(cr, `\u2193 ${this._fmtSpeed(currentRx)}`, 8, 14, 9.5);
 
-        // Upload pill
         const [txR, txG, txB] = this._waveColor('tx');
         cr.setSourceRGBA(txR, txG, txB, 0.95);
         this._text(cr, `\u2191 ${this._fmtSpeed(currentTx)}`, 8 + rxWidth + 12, 14, 9.5);
 
-        // Peak Badge
         cr.setSourceRGBA(...this._ink(0.45, 0.5));
         this._text(cr, `Peak: ${this._fmtSpeed(peakSpeed)}`, w - 6, 14, 8.5, true);
 
-        // Bottom axis labels
         cr.setSourceRGBA(...this._ink(0.3, 0.38));
         this._text(cr, '-60s', 6, h - 2, 8);
         this._text(cr, 'now', w - 6, h - 2, 8, true);
@@ -232,7 +209,6 @@ class ActivityGraphImpl extends St.DrawingArea {
             points.push({ x, y });
         }
 
-        // Fill path under wave with smooth gradient
         cr.moveTo(0, bottomY);
         cr.lineTo(points[0].x, points[0].y);
 
@@ -246,7 +222,7 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.curveTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
         }
 
-        cr.lineTo(w_calc(count, stepX), bottomY);
+        cr.lineTo((count - 1) * stepX, bottomY);
         cr.closePath();
 
         const grad = new (Cairo as any).LinearGradient(0, 0, 0, bottomY);
@@ -256,7 +232,6 @@ class ActivityGraphImpl extends St.DrawingArea {
         cr.setSource(grad);
         cr.fill();
 
-        // Stroke line
         cr.moveTo(points[0].x, points[0].y);
         for (let i = 0; i < count - 1; i++) {
             const p0 = points[i];
@@ -282,7 +257,6 @@ class ActivityGraphImpl extends St.DrawingArea {
         const maxBarHeight = h - 34; // keep bars below the header text row
         const bottomY = h - 12;
 
-        // Subtle horizontal guide lines
         cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
@@ -315,7 +289,6 @@ class ActivityGraphImpl extends St.DrawingArea {
                 grad.addColorStopRGBA(1, 0.42, 0.48, 0.58, 0.22);
                 cr.setSource(grad);
             } else {
-                // Past days subtle frosted glass bar
                 const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
                 grad.addColorStopRGBA(0, 1, 1, 1, 0.35);
                 grad.addColorStopRGBA(1, 1, 1, 1, 0.12);
@@ -327,7 +300,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
 
         cr.setSourceRGBA(...this._ink(0.8, 0.85));
-        this._text(cr, `Monthly Peak: ${this._fmt(this._peakValue)}`, 8, 14, 9.5);
+        this._text(cr, `Monthly Peak: ${fmtSize(this._peakValue)}`, 8, 14, 9.5);
 
         cr.setSourceRGBA(...this._ink(0.4, 0.45));
         this._text(cr, 'Day 1', 0, h - 2, 8);
@@ -349,21 +322,11 @@ class ActivityGraphImpl extends St.DrawingArea {
     }
 
     private _fmtSpeed(bytesPerSec: number): string {
-        if (bytesPerSec >= 1048576) return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`;
-        if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+        if (bytesPerSec >= MB) return `${(bytesPerSec / MB).toFixed(1)} MB/s`;
+        if (bytesPerSec >= KB) return `${(bytesPerSec / KB).toFixed(1)} KB/s`;
         return `${Math.round(bytesPerSec)} B/s`;
     }
 
-    private _fmt(bytes: number): string {
-        if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
-        if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
-        if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-        return `${bytes} B`;
-    }
-}
-
-function w_calc(count: number, stepX: number): number {
-    return (count - 1) * stepX;
 }
 
 export const ActivityGraph = GObject.registerClass({

@@ -9,6 +9,7 @@ dist/
 
 # Local agent context (not for the repo)
 CLAUDE.md
+REVIEW_RESOLUTION.md
 
 # Editor / IDE
 .vscode/

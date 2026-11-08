@@ -15,6 +15,18 @@ export interface StatsHistory {
     appUsage?: Record<string, Record<string, number>>; // "YYYY-MM" -> { "Firefox": bytes }
 }
 
+export const KB = 1024;
+export const MB = KB * 1024;
+export const GB = MB * 1024;
+
+export function fmtSize(bytes: number, precision = 1): string {
+    const kbDec = Math.max(0, precision - 1);
+    if (bytes >= GB) return `${(bytes / GB).toFixed(precision)} GB`;
+    if (bytes >= MB) return `${(bytes / MB).toFixed(precision)} MB`;
+    if (bytes >= KB) return `${(bytes / KB).toFixed(kbDec)} KB`;
+    return `${Math.round(bytes)} B`;
+}
+
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder();
 
@@ -71,7 +83,7 @@ export class StatsManager {
                     }
                 }
             } catch (e) {
-                const glibError = e as any;
+                const glibError = e as GLib.Error;
                 if (!glibError.matches || !glibError.matches(Gio.io_error_quark(), Gio.IOErrorEnum.NOT_FOUND)) {
                     logError(e as Error, 'SpeedMeter: Failed to load stats');
                 }
@@ -106,7 +118,6 @@ export class StatsManager {
             return;
         }
         const json = JSON.stringify(this._history);
-        // Optimization: Skip disk I/O if data hasn't changed since last save
         if (json === this._lastSavedJson) return;
 
         this._saving = true;
@@ -173,15 +184,11 @@ export class StatsManager {
         this._updateKey(this._history.daily, dayKey, rxBytes, txBytes);
         this._updateKey(this._history.monthly, monthKey, rxBytes, txBytes);
 
-        // Optimization: Periodic pruning of very old data (once per hour roughly)
         if (now.getMinutes() === 0 && now.getSeconds() < 2) {
             this._pruneHistory();
         }
     }
 
-    /**
-     * Accumulates monthly traffic per application.
-     */
     updateAppUsage(appName: string, bytes: number): void {
         if (!appName || bytes <= 0) return;
         const monthKey = this._getDayKey(new Date()).substring(0, 7);
@@ -191,20 +198,14 @@ export class StatsManager {
         this._history.appUsage[monthKey][appName] = current + bytes;
     }
 
-    /**
-     * Returns monthly app bandwidth usage sorted by highest traffic.
-     */
     getMonthlyAppUsage(): { appName: string; bytes: number }[] {
         const monthKey = this._getDayKey(new Date()).substring(0, 7);
-        const dict = (this._history.appUsage && this._history.appUsage[monthKey]) || {};
+        const dict = this._history.appUsage?.[monthKey] ?? {};
         const list = Object.entries(dict).map(([appName, bytes]) => ({ appName, bytes }));
         list.sort((a, b) => b.bytes - a.bytes);
         return list;
     }
 
-    /**
-     * Exports daily and monthly historical statistics to CSV format.
-     */
     exportToCsv(): string {
         const lines: string[] = ['Date,Type,Download_Bytes,Upload_Bytes,Total_Bytes'];
         
@@ -223,20 +224,15 @@ export class StatsManager {
         return lines.join('\n');
     }
 
-    /**
-     * Keeps the memory and disk footprint lean by removing data older than 1 year.
-     */
     private _pruneHistory(): void {
         const threshold = Date.now() - (365 * 24 * 60 * 60 * 1000);
         
-        // Prune Daily
         for (const key in this._history.daily) {
             if (new Date(key).getTime() < threshold) {
                 delete this._history.daily[key];
             }
         }
         
-        // Prune Monthly (keep last 24 months)
         const monthThreshold = Date.now() - (24 * 30 * 24 * 60 * 60 * 1000);
         for (const key in this._history.monthly) {
             if (new Date(key + "-01").getTime() < monthThreshold) {
