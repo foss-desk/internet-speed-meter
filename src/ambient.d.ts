@@ -12,6 +12,8 @@ import '@girs/soup-3.0/ambient';
 
 declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
     export class PopupMenu extends GObject.Object {
+        box: any;
+        actor: any;
         isOpen: boolean;
         addMenuItem(item: any, position?: number): void;
         removeAll(): void;
@@ -20,14 +22,16 @@ declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
     }
     export class PopupBaseMenuItem extends GObject.Object {
         visible: boolean;
+        style: string;
         constructor(params?: any);
         add_child(actor: any): void;
         destroy(): void;
+        add_style_class_name(name: string): void;
+        remove_style_class_name(name: string): void;
     }
     export class PopupMenuItem extends PopupBaseMenuItem {
         constructor(text: string, params?: any);
         label: any;
-        add_style_class_name(name: string): void;
     }
     export class PopupSeparatorMenuItem extends PopupBaseMenuItem {}
     export class PopupSubMenuMenuItem extends GObject.Object {
@@ -36,6 +40,7 @@ declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
         menu: PopupMenu;
     }
 }
+
 
 
 
