@@ -6,7 +6,7 @@ import GObject from 'gi://GObject';
 import Pango from 'gi://Pango';
 import PangoCairo from 'gi://PangoCairo';
 import St from 'gi://St';
-import { StatsManager, TrafficData } from './stats.js';
+import { StatsManager, TrafficData, KB, MB, fmtSize } from './stats.js';
 
 export type GraphMode = 'realtime' | 'monthly';
 
@@ -17,7 +17,6 @@ class ActivityGraphImpl extends St.DrawingArea {
     private _lastUpdateDay: number = -1;
     private _lightMode: boolean = false;
 
-    // Real-time 60-second rolling sample buffer
     private _rxBuffer: number[] = new Array(60).fill(0);
     private _txBuffer: number[] = new Array(60).fill(0);
 
@@ -95,7 +94,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
         const newDailyData: number[] = [];
-        let peak = 1024 * 1024 * 10; // 10 MB floor
+        let peak = 10 * MB; // 10 MB floor
 
         const dailyHistory = stats.getDailyData();
 
@@ -223,7 +222,7 @@ class ActivityGraphImpl extends St.DrawingArea {
             cr.curveTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
         }
 
-        cr.lineTo(w_calc(count, stepX), bottomY);
+        cr.lineTo((count - 1) * stepX, bottomY);
         cr.closePath();
 
         const grad = new (Cairo as any).LinearGradient(0, 0, 0, bottomY);
@@ -301,7 +300,7 @@ class ActivityGraphImpl extends St.DrawingArea {
         }
 
         cr.setSourceRGBA(...this._ink(0.8, 0.85));
-        this._text(cr, `Monthly Peak: ${this._fmt(this._peakValue)}`, 8, 14, 9.5);
+        this._text(cr, `Monthly Peak: ${fmtSize(this._peakValue)}`, 8, 14, 9.5);
 
         cr.setSourceRGBA(...this._ink(0.4, 0.45));
         this._text(cr, 'Day 1', 0, h - 2, 8);
@@ -323,21 +322,11 @@ class ActivityGraphImpl extends St.DrawingArea {
     }
 
     private _fmtSpeed(bytesPerSec: number): string {
-        if (bytesPerSec >= 1048576) return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`;
-        if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+        if (bytesPerSec >= MB) return `${(bytesPerSec / MB).toFixed(1)} MB/s`;
+        if (bytesPerSec >= KB) return `${(bytesPerSec / KB).toFixed(1)} KB/s`;
         return `${Math.round(bytesPerSec)} B/s`;
     }
 
-    private _fmt(bytes: number): string {
-        if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
-        if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
-        if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-        return `${bytes} B`;
-    }
-}
-
-function w_calc(count: number, stepX: number): number {
-    return (count - 1) * stepX;
 }
 
 export const ActivityGraph = GObject.registerClass({

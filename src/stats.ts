@@ -15,6 +15,18 @@ export interface StatsHistory {
     appUsage?: Record<string, Record<string, number>>; // "YYYY-MM" -> { "Firefox": bytes }
 }
 
+export const KB = 1024;
+export const MB = KB * 1024;
+export const GB = MB * 1024;
+
+export function fmtSize(bytes: number, precision = 1): string {
+    const kbDec = Math.max(0, precision - 1);
+    if (bytes >= GB) return `${(bytes / GB).toFixed(precision)} GB`;
+    if (bytes >= MB) return `${(bytes / MB).toFixed(precision)} MB`;
+    if (bytes >= KB) return `${(bytes / KB).toFixed(kbDec)} KB`;
+    return `${Math.round(bytes)} B`;
+}
+
 const UTF8_ENCODER = new TextEncoder();
 const UTF8_DECODER = new TextDecoder();
 
@@ -71,7 +83,7 @@ export class StatsManager {
                     }
                 }
             } catch (e) {
-                const glibError = e as any;
+                const glibError = e as GLib.Error;
                 if (!glibError.matches || !glibError.matches(Gio.io_error_quark(), Gio.IOErrorEnum.NOT_FOUND)) {
                     logError(e as Error, 'SpeedMeter: Failed to load stats');
                 }
@@ -188,7 +200,7 @@ export class StatsManager {
 
     getMonthlyAppUsage(): { appName: string; bytes: number }[] {
         const monthKey = this._getDayKey(new Date()).substring(0, 7);
-        const dict = (this._history.appUsage && this._history.appUsage[monthKey]) || {};
+        const dict = this._history.appUsage?.[monthKey] ?? {};
         const list = Object.entries(dict).map(([appName, bytes]) => ({ appName, bytes }));
         list.sort((a, b) => b.bytes - a.bytes);
         return list;
@@ -221,7 +233,6 @@ export class StatsManager {
             }
         }
         
-        // Prune Monthly (keep last 24 months)
         const monthThreshold = Date.now() - (24 * 30 * 24 * 60 * 60 * 1000);
         for (const key in this._history.monthly) {
             if (new Date(key + "-01").getTime() < monthThreshold) {

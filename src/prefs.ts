@@ -7,7 +7,7 @@ import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
-import { StatsManager } from './stats.js';
+import { StatsManager, fmtSize } from './stats.js';
 
 export default class SpeedMeterPreferences extends ExtensionPreferences {
     async fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
@@ -233,7 +233,7 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
                 for (const appItem of appList.slice(0, 10)) {
                     const row = new Adw.ActionRow({
                         title: appItem.appName,
-                        subtitle: `Monthly Total: ${this._fmtSize(appItem.bytes)}`,
+                        subtitle: `Monthly Total: ${fmtSize(appItem.bytes, 2)}`,
                     });
                     const icon = new Gtk.Image({
                         iconName: 'application-x-executable-symbolic',
@@ -246,11 +246,5 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         } catch (e) {}
     }
 
-    private _fmtSize(bytes: number): string {
-        if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(2)} GB`;
-        if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(2)} MB`;
-        if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        return `${Math.round(bytes)} B`;
-    }
 }
 
