@@ -2,6 +2,7 @@
   "name": "Internet Speed Meter",
   "description": "A lightweight, real-time network speed monitor for your GNOME Shell top panel. Displays upload and download speeds with minimal CPU overhead.\n\nNetwork use: only while the menu is open, it looks up your public IP via api.ipify.org (fallback icanhazip.com) and measures connection quality with a small HTTPS request to Cloudflare (1.1.1.1) every 30 seconds. Opening the speed test page loads a list of nearby public speedtest.net servers; the test itself only runs when you press Start. Nothing is sent in the background while the menu is closed.",
   "uuid": "speed-meter@mojahid.lunecode.com",
+  "version-name": "1.6.0",
   "shell-version": [
     "45",
     "46",
