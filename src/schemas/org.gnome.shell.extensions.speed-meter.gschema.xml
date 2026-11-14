@@ -68,13 +68,13 @@
     <key name="adaptive-power-saver" type="b">
       <default>true</default>
       <summary>Adaptive Power and Data Saver</summary>
-      <description>Automatically increases polling interval when on battery power or metered connection to save battery and data.</description>
+      <description>Automatically increases the polling interval while running on battery power.</description>
     </key>
 
     <key name="show-top-apps" type="b">
       <default>true</default>
-      <summary>Show Top Bandwidth Applications</summary>
-      <description>Inspect and display top bandwidth consuming processes in the menu dashboard.</description>
+      <summary>Track traffic per focused application</summary>
+      <description>Show the focused application in the menu and attribute traffic to whichever application is focused. This is an approximation, not per-process accounting.</description>
     </key>
 
   </schema>

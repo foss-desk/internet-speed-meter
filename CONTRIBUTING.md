@@ -43,6 +43,17 @@ Unsure where to begin? You can start by looking through these `good first issue`
 * **Follow the existing code style**. We use `.editorconfig` to maintain consistency.
 * **Provide a clear and descriptive PR title and description**.
 
+## Translations
+
+1. Copy `po/speed-meter@mojahid.lunecode.com.pot` to `po/<lang>.po` (e.g. `po/de.po`), or run `msginit -i po/speed-meter@mojahid.lunecode.com.pot -o po/de.po -l de`.
+2. Fill in the `msgstr` entries. Keep placeholders such as `%s`, `%d` and `%%` exactly as they are.
+3. Check it with `msgfmt --check po/de.po`, then run `make install` to try it.
+4. Open a pull request with the new `.po` file, or send it to MD Mojahid <aammojahid@gmail.com>.
+
+In your `.po` header, set `Last-Translator` and `Language-Team` to yourself and your language; the template leaves them as placeholders.
+
+Developers: after changing UI strings, run `make pot`. Wrap new strings in `_()`. For strings defined at module scope, use `N_()` and call `_()` where the string is displayed.
+
 ## Styleguides
 
 ### Git Commit Messages
@@ -60,4 +71,4 @@ Unsure where to begin? You can start by looking through these `good first issue`
 
 ## Questions?
 
-If you have any questions, feel free to open an issue or contact the maintainer at [mojahid@lunecode.com](mailto:mojahid@lunecode.com).
+If you have any questions, feel free to open an issue or contact the maintainer, MD Mojahid, at [aammojahid@gmail.com](mailto:aammojahid@gmail.com).

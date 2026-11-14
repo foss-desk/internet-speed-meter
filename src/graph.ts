@@ -1,337 +1,223 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (c) 2025 Mojahid <mojahid@lunecode.com>
+// Copyright (c) 2026 MD Mojahid <aammojahid@gmail.com>
 
-import Cairo from 'gi://cairo';
+import Cairo from 'cairo';
 import GObject from 'gi://GObject';
 import Pango from 'gi://Pango';
 import PangoCairo from 'gi://PangoCairo';
 import St from 'gi://St';
-import { StatsManager, TrafficData, KB, MB, fmtSize } from './stats.js';
+
+import { gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
+
+import { KB, MB, fmtSize, fmtSpeed } from './format.js';
+import { StatsManager, dayKey } from './stats.js';
 
 export type GraphMode = 'realtime' | 'monthly';
 
-class ActivityGraphImpl extends St.DrawingArea {
-    private _mode: GraphMode = 'realtime';
-    private _dailyData: number[] = [];
-    private _peakValue: number = 0;
-    private _lastUpdateDay: number = -1;
-    private _lightMode: boolean = false;
+type RGB = [number, number, number];
 
-    private _rxBuffer: number[] = new Array(60).fill(0);
-    private _txBuffer: number[] = new Array(60).fill(0);
+const WIDTH = 300;
+const HEIGHT = 85;
+const REALTIME_SAMPLES = 60;
+// Keeps the plot below the header text row and above the axis labels.
+const HEADER_HEIGHT = 34;
+const FOOTER_HEIGHT = 12;
+
+// Download (rx) and upload (tx) colors: saturated for the dark backdrop, darker shades for the light one.
+const WAVE_COLORS: Record<'rx' | 'tx', { dark: RGB; light: RGB }> = {
+    rx: { dark: [0.0, 0.82, 1.0], light: [0.039, 0.494, 0.643] },
+    tx: { dark: [0.97, 0.34, 0.99], light: [0.671, 0.204, 0.431] },
+};
+
+// Cairo-drawn traffic graph: the last 60 samples as waves, or this month's daily totals as bars.
+export class ActivityGraph extends St.DrawingArea {
+    static {
+        GObject.registerClass({ GTypeName: 'SpeedMeterActivityGraph' }, this);
+    }
+
+    private _mode: GraphMode = 'realtime';
+    private _lightMode = false;
+    private _rxSamples: number[] = new Array(REALTIME_SAMPLES).fill(0);
+    private _txSamples: number[] = new Array(REALTIME_SAMPLES).fill(0);
+    private _dailyTotals: number[] = [];
+    private _monthlyPeak = 0;
+    private _lastUpdateDay = -1;
 
     constructor() {
-        super({
-            style_class: 'speed-meter-graph',
-            can_focus: false,
-            reactive: true,
-            x_expand: true,
-            y_expand: true,
-        });
-
-        this.set_size(300, 85);
-        this.connect('repaint', (area: any) => this._draw(area));
-    }
-
-    vfunc_get_preferred_width(_forHeight: number): [number, number] {
-        return [300, 300];
-    }
-
-    vfunc_get_preferred_height(_forWidth: number): [number, number] {
-        return [85, 85];
+        super({ style_class: 'speed-meter-graph', x_expand: true, y_expand: true });
+        this.set_size(WIDTH, HEIGHT);
     }
 
     setMode(mode: GraphMode): void {
-        if (this._mode !== mode) {
-            this._mode = mode;
-            this.queue_repaint();
-        }
-    }
-
-    getMode(): GraphMode {
-        return this._mode;
-    }
-
-    toggleMode(): void {
-        this._mode = this._mode === 'realtime' ? 'monthly' : 'realtime';
+        this._mode = mode;
         this.queue_repaint();
     }
 
-    /**
-     * The graph's backdrop (.speed-meter-graph-container) switches between a
-     * dark and a light background via CSS depending on the shell theme; the
-     * Cairo-drawn grid lines/labels/ghost-bars below are painted directly
-     * (not themeable via CSS) so they need the same light/dark switch here.
-     */
+    // Grid lines and labels are painted, not styled, so they follow the theme through this flag.
     setLightMode(light: boolean): void {
-        if (this._lightMode !== light) {
-            this._lightMode = light;
-            this.queue_repaint();
-        }
+        this._lightMode = light;
+        this.queue_repaint();
     }
 
-    pushRealtimeSample(rxs: number, txs: number): void {
-        this._rxBuffer.shift();
-        this._rxBuffer.push(Math.max(0, rxs));
-        
-        this._txBuffer.shift();
-        this._txBuffer.push(Math.max(0, txs));
-
-        if (this._mode === 'realtime') {
+    pushRealtimeSample(rxPerSec: number, txPerSec: number): void {
+        this._rxSamples.shift();
+        this._rxSamples.push(Math.max(0, rxPerSec));
+        this._txSamples.shift();
+        this._txSamples.push(Math.max(0, txPerSec));
+        if (this._mode === 'realtime')
             this.queue_repaint();
-        }
     }
 
     updateFromStats(stats: StatsManager): void {
         const now = new Date();
-        const currentDay = now.getDate();
-        
-        if (this._lastUpdateDay === currentDay && this._dailyData.length > 0) {
-            return;
-        }
-
         const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        
-        const newDailyData: number[] = [];
-        let peak = 10 * MB; // 10 MB floor
-
-        const dailyHistory = stats.getDailyData();
-
-        for (let d = 1; d <= daysInMonth; d++) {
-            const dayKey = `${yearMonth}-${String(d).padStart(2, '0')}`;
-            const data: TrafficData = dailyHistory[dayKey] || { rx: 0, tx: 0 };
-            const total = data.rx + data.tx;
-            
-            newDailyData.push(total);
-            if (total > peak) peak = total;
+        const daily = stats.getDailyData();
+        this._dailyTotals = [];
+        this._monthlyPeak = 10 * MB;
+        for (let day = 1; day <= daysInMonth; day++) {
+            const data = daily[dayKey(new Date(now.getFullYear(), now.getMonth(), day))];
+            const total = data ? data.rx + data.tx : 0;
+            this._dailyTotals.push(total);
+            this._monthlyPeak = Math.max(this._monthlyPeak, total);
         }
-
-        this._dailyData = newDailyData;
-        this._peakValue = peak;
-        this._lastUpdateDay = currentDay;
-        
-        if (this._mode === 'monthly') {
+        this._lastUpdateDay = now.getDate();
+        if (this._mode === 'monthly')
             this.queue_repaint();
-        }
     }
 
-    // Grid lines/labels are painted with light "ink" on the dark backdrop;
-    // on the light-mode backdrop the same ink would be nearly invisible, so
-    // this picks a dark ink instead, keeping the dark-mode alpha by default.
-    private _ink(alphaDark: number, alphaLight: number = alphaDark): [number, number, number, number] {
+    vfunc_repaint(): void {
+        const cr = this.get_context();
+        const [width, height] = this.get_surface_size();
+        if (this._mode === 'realtime')
+            this._drawRealtime(cr, width, height);
+        else
+            this._drawMonthly(cr, width, height);
+        // Free the native context now instead of waiting for garbage collection.
+        cr.$dispose();
+    }
+
+    private _ink(alphaDark: number, alphaLight: number): [number, number, number, number] {
         return this._lightMode ? [0.08, 0.1, 0.13, alphaLight] : [1, 1, 1, alphaDark];
     }
 
-    // Download/upload wave colors are a saturated neon cyan/magenta tuned for
-    // the dark backdrop; on the light backdrop they're swapped for the same
-    // darker teal/magenta shades to keep contrast against a light background.
-    private _waveColor(kind: 'rx' | 'tx'): [number, number, number] {
-        if (kind === 'rx') return this._lightMode ? [0.039, 0.494, 0.643] : [0.0, 0.82, 1.0];
-        return this._lightMode ? [0.671, 0.204, 0.431] : [0.97, 0.34, 0.99];
+    private _waveColor(kind: 'rx' | 'tx'): RGB {
+        return this._lightMode ? WAVE_COLORS[kind].light : WAVE_COLORS[kind].dark;
     }
 
-    private _draw(area: any): void {
-        const cr = area.get_context();
-        const [w, h] = area.get_surface_size();
-
-        try {
-            if (w <= 0 || h <= 0) return;
-            if (this._mode === 'realtime') {
-                this._drawRealtimeGraph(cr, w, h);
-            } else {
-                this._drawMonthlyGraph(cr, w, h);
-            }
-        } finally {
-            // Free the native context now instead of waiting for GC (gjs.guide).
-            cr.$dispose();
-        }
-    }
-
-    private _drawRealtimeGraph(cr: any, w: number, h: number): void {
-        const maxRx = Math.max(...this._rxBuffer, 1024 * 10); // Minimum 10 KB/s scale
-        const maxTx = Math.max(...this._txBuffer, 1024 * 10);
-        const peakSpeed = Math.max(maxRx, maxTx);
-
-        const graphH = h - 34; // keep the waves below the header text row
-        const bottomY = h - 12;
-        const count = this._rxBuffer.length;
-        const stepX = w / (count - 1);
-
+    private _drawGrid(cr: Cairo.Context, width: number, bottom: number, plotHeight: number): void {
         cr.setSourceRGBA(...this._ink(0.05, 0.07));
         cr.setLineWidth(0.75);
         for (let i = 1; i <= 3; i++) {
-            const y = bottomY - (graphH / 3) * i;
+            const y = bottom - plotHeight / 3 * i;
             cr.moveTo(0, y);
-            cr.lineTo(w, y);
+            cr.lineTo(width, y);
             cr.stroke();
         }
-
-        this._drawBezierWave(cr, this._rxBuffer, peakSpeed, stepX, bottomY, graphH, this._waveColor('rx'));
-        this._drawBezierWave(cr, this._txBuffer, peakSpeed, stepX, bottomY, graphH, this._waveColor('tx'));
-
-        const currentRx = this._rxBuffer[count - 1];
-        const currentTx = this._txBuffer[count - 1];
-
-        const [rxR, rxG, rxB] = this._waveColor('rx');
-        cr.setSourceRGBA(rxR, rxG, rxB, 0.95);
-        const rxWidth = this._text(cr, `\u2193 ${this._fmtSpeed(currentRx)}`, 8, 14, 9.5);
-
-        const [txR, txG, txB] = this._waveColor('tx');
-        cr.setSourceRGBA(txR, txG, txB, 0.95);
-        this._text(cr, `\u2191 ${this._fmtSpeed(currentTx)}`, 8 + rxWidth + 12, 14, 9.5);
-
-        cr.setSourceRGBA(...this._ink(0.45, 0.5));
-        this._text(cr, `Peak: ${this._fmtSpeed(peakSpeed)}`, w - 6, 14, 8.5, true);
-
-        cr.setSourceRGBA(...this._ink(0.3, 0.38));
-        this._text(cr, '-60s', 6, h - 2, 8);
-        this._text(cr, 'now', w - 6, h - 2, 8, true);
     }
 
-    private _drawBezierWave(
-        cr: any,
-        data: number[],
-        peak: number,
-        stepX: number,
-        bottomY: number,
-        graphH: number,
-        rgb: [number, number, number]
-    ): void {
-        const count = data.length;
-        const points: { x: number; y: number }[] = [];
+    private _drawRealtime(cr: Cairo.Context, width: number, height: number): void {
+        const peak = Math.max(...this._rxSamples, ...this._txSamples, 10 * KB);
+        const plotHeight = height - HEADER_HEIGHT;
+        const bottom = height - FOOTER_HEIGHT;
+        this._drawGrid(cr, width, bottom, plotHeight);
 
-        for (let i = 0; i < count; i++) {
-            const val = data[i];
-            const ratio = peak > 0 ? val / peak : 0;
-            const y = bottomY - Math.min(graphH, ratio * graphH);
-            const x = i * stepX;
-            points.push({ x, y });
-        }
+        this._drawWave(cr, this._rxSamples, peak, width, bottom, plotHeight, this._waveColor('rx'));
+        this._drawWave(cr, this._txSamples, peak, width, bottom, plotHeight, this._waveColor('tx'));
 
-        cr.moveTo(0, bottomY);
-        cr.lineTo(points[0].x, points[0].y);
+        const last = REALTIME_SAMPLES - 1;
+        cr.setSourceRGBA(...this._waveColor('rx'), 0.95);
+        const rxWidth = this._text(cr, `↓ ${fmtSpeed(this._rxSamples[last])}`, 8, 14, 9.5);
+        cr.setSourceRGBA(...this._waveColor('tx'), 0.95);
+        this._text(cr, `↑ ${fmtSpeed(this._txSamples[last])}`, 8 + rxWidth + 12, 14, 9.5);
 
-        for (let i = 0; i < count - 1; i++) {
-            const p0 = points[i];
-            const p1 = points[i + 1];
-            const cp1x = p0.x + (p1.x - p0.x) / 2;
-            const cp1y = p0.y;
-            const cp2x = p0.x + (p1.x - p0.x) / 2;
-            const cp2y = p1.y;
-            cr.curveTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
-        }
+        cr.setSourceRGBA(...this._ink(0.45, 0.5));
+        this._text(cr, _('Peak: %s').format(fmtSpeed(peak)), width - 6, 14, 8.5, true);
+        cr.setSourceRGBA(...this._ink(0.3, 0.38));
+        this._text(cr, '-60s', 6, height - 2, 8);
+        this._text(cr, _('now'), width - 6, height - 2, 8, true);
+    }
 
-        cr.lineTo((count - 1) * stepX, bottomY);
+    // Filled area under a smooth curve through the samples, then the curve itself on top.
+    private _drawWave(cr: Cairo.Context, samples: number[], peak: number, width: number, bottom: number,
+        plotHeight: number, rgb: RGB): void {
+        const step = width / (samples.length - 1);
+        const points = samples.map((value, i) => [i * step, bottom - Math.min(plotHeight, value / peak * plotHeight)]);
+        const traceCurve = () => {
+            for (let i = 1; i < points.length; i++) {
+                const [x0, y0] = points[i - 1];
+                const [x1, y1] = points[i];
+                const midX = (x0 + x1) / 2;
+                cr.curveTo(midX, y0, midX, y1, x1, y1);
+            }
+        };
+
+        cr.moveTo(0, bottom);
+        cr.lineTo(points[0][0], points[0][1]);
+        traceCurve();
+        cr.lineTo(width, bottom);
         cr.closePath();
-
-        const grad = new (Cairo as any).LinearGradient(0, 0, 0, bottomY);
-        grad.addColorStopRGBA(0, rgb[0], rgb[1], rgb[2], 0.38);
-        grad.addColorStopRGBA(0.8, rgb[0], rgb[1], rgb[2], 0.08);
-        grad.addColorStopRGBA(1, rgb[0], rgb[1], rgb[2], 0.0);
-        cr.setSource(grad);
+        const fill = new Cairo.LinearGradient(0, 0, 0, bottom);
+        fill.addColorStopRGBA(0, ...rgb, 0.38);
+        fill.addColorStopRGBA(0.8, ...rgb, 0.08);
+        fill.addColorStopRGBA(1, ...rgb, 0);
+        cr.setSource(fill);
         cr.fill();
 
-        cr.moveTo(points[0].x, points[0].y);
-        for (let i = 0; i < count - 1; i++) {
-            const p0 = points[i];
-            const p1 = points[i + 1];
-            const cp1x = p0.x + (p1.x - p0.x) / 2;
-            const cp1y = p0.y;
-            const cp2x = p0.x + (p1.x - p0.x) / 2;
-            const cp2y = p1.y;
-            cr.curveTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
-        }
-
-        cr.setSourceRGBA(rgb[0], rgb[1], rgb[2], 1.0);
+        cr.moveTo(points[0][0], points[0][1]);
+        traceCurve();
+        cr.setSourceRGBA(...rgb, 1);
         cr.setLineWidth(1.8);
         cr.stroke();
     }
 
-    private _drawMonthlyGraph(cr: any, w: number, h: number): void {
-        if (this._dailyData.length === 0) return;
+    private _drawMonthly(cr: Cairo.Context, width: number, height: number): void {
+        const days = this._dailyTotals.length;
+        if (days === 0)
+            return;
 
-        const numDays = this._dailyData.length;
-        const barSpacing = 3;
-        const barWidth = Math.max(2, (w / numDays) - barSpacing);
-        const maxBarHeight = h - 34; // keep bars below the header text row
-        const bottomY = h - 12;
+        const spacing = 3;
+        const barWidth = Math.max(2, width / days - spacing);
+        const plotHeight = height - HEADER_HEIGHT;
+        const bottom = height - FOOTER_HEIGHT;
+        this._drawGrid(cr, width, bottom, plotHeight);
 
-        cr.setSourceRGBA(...this._ink(0.05, 0.07));
-        cr.setLineWidth(0.75);
-        for (let i = 1; i <= 3; i++) {
-            const y = bottomY - (maxBarHeight / 3) * i;
-            cr.moveTo(0, y);
-            cr.lineTo(w, y);
-            cr.stroke();
-        }
-
-        for (let i = 0; i < numDays; i++) {
-            const val = this._dailyData[i];
-            if (val === 0 && (i + 1) !== this._lastUpdateDay) continue;
-
-            const barH = Math.max(2, (val / this._peakValue) * maxBarHeight);
-            const x = i * (barWidth + barSpacing);
-            const y = bottomY - barH;
-
-            if ((i + 1) === this._lastUpdateDay) {
-                // Today's bar in the download color (neon cyan is unreadable on light)
-                const [r, g, b] = this._waveColor('rx');
-                const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
-                grad.addColorStopRGBA(0, r, g, b, 1.0);
-                grad.addColorStopRGBA(1, r, g, b, 0.5);
-                cr.setSource(grad);
-            } else if (this._lightMode) {
-                // Past days muted slate-blue bar (the dark-mode "frosted
-                // glass" white-on-dark fill would be invisible on light)
-                const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
-                grad.addColorStopRGBA(0, 0.42, 0.48, 0.58, 0.55);
-                grad.addColorStopRGBA(1, 0.42, 0.48, 0.58, 0.22);
-                cr.setSource(grad);
-            } else {
-                const grad = new (Cairo as any).LinearGradient(x, y, x, bottomY);
-                grad.addColorStopRGBA(0, 1, 1, 1, 0.35);
-                grad.addColorStopRGBA(1, 1, 1, 1, 0.12);
-                cr.setSource(grad);
-            }
-
-            cr.rectangle(x, y, barWidth, barH);
+        // Today stands out in the download color; past days are a muted bar.
+        const pastColor: RGB = this._lightMode ? [0.42, 0.48, 0.58] : [1, 1, 1];
+        const pastAlpha: [number, number] = this._lightMode ? [0.55, 0.22] : [0.35, 0.12];
+        this._dailyTotals.forEach((total, index) => {
+            const isToday = index + 1 === this._lastUpdateDay;
+            if (total === 0 && !isToday)
+                return;
+            const barHeight = Math.max(2, total / this._monthlyPeak * plotHeight);
+            const x = index * (barWidth + spacing);
+            const y = bottom - barHeight;
+            const gradient = new Cairo.LinearGradient(x, y, x, bottom);
+            const [rgb, top, base] = isToday ? [this._waveColor('rx'), 1, 0.5] : [pastColor, ...pastAlpha];
+            gradient.addColorStopRGBA(0, ...rgb, top);
+            gradient.addColorStopRGBA(1, ...rgb, base);
+            cr.setSource(gradient);
+            cr.rectangle(x, y, barWidth, barHeight);
             cr.fill();
-        }
+        });
 
         cr.setSourceRGBA(...this._ink(0.8, 0.85));
-        this._text(cr, `Monthly Peak: ${fmtSize(this._peakValue)}`, 8, 14, 9.5);
-
+        this._text(cr, _('Monthly Peak: %s').format(fmtSize(this._monthlyPeak)), 8, 14, 9.5);
         cr.setSourceRGBA(...this._ink(0.4, 0.45));
-        this._text(cr, 'Day 1', 0, h - 2, 8);
-        this._text(cr, `Day ${numDays}`, w, h - 2, 8, true);
+        this._text(cr, _('Day %d').format(1), 0, height - 2, 8);
+        this._text(cr, _('Day %d').format(days), width, height - 2, 8, true);
     }
 
-    // Pango instead of Cairo's toy text API, which has no font fallback (\u2193/\u2191 drew as boxes).
-    // `x` is the left edge (right edge when alignRight), `y` the baseline; returns the text width.
-    private _text(cr: any, text: string, x: number, y: number, sizePx: number, alignRight = false): number {
+    // Pango rather than Cairo's toy text API, which has no font fallback (the arrows drew as boxes).
+    // `x` is the left edge (the right edge when alignRight) and `y` the baseline; returns the text width.
+    private _text(cr: Cairo.Context, text: string, x: number, y: number, sizePx: number, alignRight = false): number {
         const layout = PangoCairo.create_layout(cr);
         const font = Pango.FontDescription.from_string('Sans');
         font.set_absolute_size(sizePx * Pango.SCALE);
         layout.set_font_description(font);
         layout.set_text(text, -1);
-        const width = layout.get_pixel_extents()[1]?.width ?? 0;
+        const [width] = layout.get_pixel_size();
         cr.moveTo(alignRight ? x - width : x, y - layout.get_baseline() / Pango.SCALE);
         PangoCairo.show_layout(cr, layout);
         return width;
     }
-
-    private _fmtSpeed(bytesPerSec: number): string {
-        if (bytesPerSec >= MB) return `${(bytesPerSec / MB).toFixed(1)} MB/s`;
-        if (bytesPerSec >= KB) return `${(bytesPerSec / KB).toFixed(1)} KB/s`;
-        return `${Math.round(bytesPerSec)} B/s`;
-    }
-
 }
-
-export const ActivityGraph = GObject.registerClass({
-    GTypeName: 'SpeedMeterActivityGraph',
-}, ActivityGraphImpl);
-
-export type ActivityGraph = ActivityGraphImpl;
-

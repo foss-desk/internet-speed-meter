@@ -27,7 +27,7 @@
 ## ✨ Features
 
 - **🚀 Real-Time Monitoring** — Live download (↓) and upload (↑) speeds seamlessly integrated in the top panel.
-- **⚡ Integrated Speedtest Suite** — Run Ping, Jitter, Download, and Upload bandwidth checks instantly without opening a browser through a dedicated Ookla-inspired popup panel.
+- **⚡ Integrated Speedtest Suite** — Pick a nearby public speedtest.net server (or let it choose the one with the lowest ping) and measure ping, jitter, loss, download and upload from the panel menu, without opening a browser.
 - **📈 Dual-Mode Graph Analytics** — Interactive menu dashboard featuring both a **Live 60-second Bezier wave graph** and a **Monthly daily history bar chart**.
 - **🔋 Smart Battery & VPN Inspector** — Adaptive polling auto-throttles to save battery, alongside real-time recognition for VPNs/Mesh networks (Tailscale, WireGuard, WARP, ZeroTier).
 - **📊 App-Level Profiling & Quotas** — Tracks background bandwidth consumption by application and allows setting Monthly Data Caps (GB) with desktop notification alerts.

@@ -1,284 +1,178 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (c) 2025 Mojahid <mojahid@lunecode.com>
+// Copyright (c) 2026 MD Mojahid <aammojahid@gmail.com>
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
+
+import { readFile } from './network.js';
+
+Gio._promisify(Gio.File.prototype, 'make_directory_async');
+Gio._promisify(Gio.File.prototype, 'replace_contents_async');
+
+const KEEP_DAYS = 365;
+const KEEP_MONTHS = 24;
 
 export interface TrafficData {
     rx: number;
     tx: number;
 }
 
-export interface StatsHistory {
+interface History {
     daily: Record<string, TrafficData>; // "YYYY-MM-DD"
     monthly: Record<string, TrafficData>; // "YYYY-MM"
-    appUsage?: Record<string, Record<string, number>>; // "YYYY-MM" -> { "Firefox": bytes }
+    appUsage: Record<string, Record<string, number>>; // "YYYY-MM" -> { "Firefox": bytes }
 }
 
-export const KB = 1024;
-export const MB = KB * 1024;
-export const GB = MB * 1024;
-
-export function fmtSize(bytes: number, precision = 1): string {
-    const kbDec = Math.max(0, precision - 1);
-    if (bytes >= GB) return `${(bytes / GB).toFixed(precision)} GB`;
-    if (bytes >= MB) return `${(bytes / MB).toFixed(precision)} MB`;
-    if (bytes >= KB) return `${(bytes / KB).toFixed(kbDec)} KB`;
-    return `${Math.round(bytes)} B`;
+export function dayKey(date: Date): string {
+    return `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-const UTF8_ENCODER = new TextEncoder();
-const UTF8_DECODER = new TextDecoder();
+export function monthKey(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
 
+function addTraffic(dict: Record<string, TrafficData>, key: string, rx: number, tx: number): void {
+    const entry = dict[key] ??= { rx: 0, tx: 0 };
+    entry.rx += rx;
+    entry.tx += tx;
+}
+
+// Daily, monthly and per-application traffic, persisted as JSON in the user data directory
+// (not the extension directory, which is replaced on every update).
 export class StatsManager {
-    private _file: Gio.File;
-    private _history: StatsHistory = { daily: {}, monthly: {} };
-    private _lastSavedJson: string = '';
-    private _loaded: boolean = false;
-    private _pendingUpdates: TrafficData[] = [];
-    private _saving: boolean = false;
-    private _saveQueued: boolean = false;
-    private _dirReady: boolean = false;
-    private _loadedPromise: Promise<void>;
-    private _resolveLoaded: () => void = () => {};
+    private _file = Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'internet-speed-meter', 'stats.json']));
+    private _history: History = { daily: {}, monthly: {}, appUsage: {} };
+    private _savedJson = '';
+    private _loaded = false;
+    // Traffic counted before the history finished loading.
+    private _pending: TrafficData = { rx: 0, tx: 0 };
+    private _saving = false;
+    private _saveAgain = false;
+    private _ready: Promise<void>;
 
     constructor() {
-        // User data dir, not the extension dir: that one is replaced on every extension update.
-        const path = GLib.build_filenamev([GLib.get_user_data_dir(), 'internet-speed-meter', 'stats.json']);
-        this._file = Gio.File.new_for_path(path);
-        this._loadedPromise = new Promise((resolve) => {
-            this._resolveLoaded = resolve;
-        });
-        this._loadAsync();
+        this._ready = this._load();
     }
 
-    /**
-     * Resolves once the on-disk history has finished loading (or failed to load).
-     * Callers that read history right after construction (e.g. prefs.ts) must await
-     * this first, since the constructor only kicks off an async file read.
-     */
+    // Resolves once the history is loaded; read nothing before that.
     ready(): Promise<void> {
-        return this._loadedPromise;
+        return this._ready;
     }
 
-    private _loadAsync(): void {
-        this._file.load_contents_async(null, (file, res) => {
-            try {
-                if (!file) return;
-                const [ok, contents] = file.load_contents_finish(res);
-                if (ok && contents) {
-                    const text = UTF8_DECODER.decode(contents);
-                    try {
-                        const loaded = JSON.parse(text);
-                        if (loaded && typeof loaded === 'object') {
-                            this._history = {
-                                daily: loaded.daily || {},
-                                monthly: loaded.monthly || {},
-                                appUsage: loaded.appUsage || {},
-                            };
-                            this._lastSavedJson = text;
-                        }
-                    } catch (parseErr) {
-                        logError(parseErr as Error, 'SpeedMeter: Corrupt stats.json');
-                    }
-                }
-            } catch (e) {
-                const glibError = e as GLib.Error;
-                if (!glibError.matches || !glibError.matches(Gio.io_error_quark(), Gio.IOErrorEnum.NOT_FOUND)) {
-                    logError(e as Error, 'SpeedMeter: Failed to load stats');
-                }
-            } finally {
-                this._loaded = true;
-                this._flushPendingUpdates();
-                this._resolveLoaded();
-            }
-        });
-    }
-
-    private _flushPendingUpdates(): void {
-        for (const pending of this._pendingUpdates) {
-            this.update(pending.rx, pending.tx);
+    private async _load(): Promise<void> {
+        try {
+            const text = await readFile(this._file.get_path()!, null);
+            const data = JSON.parse(text);
+            this._history = { daily: data.daily ?? {}, monthly: data.monthly ?? {}, appUsage: data.appUsage ?? {} };
+            this._savedJson = text;
+        } catch (e) {
+            if (!(e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)))
+                logError(e as Error, 'SpeedMeter: Failed to load traffic history');
         }
-        this._pendingUpdates = [];
+        this._loaded = true;
+        this.update(this._pending.rx, this._pending.tx);
+    }
+
+    async save(): Promise<void> {
+        if (!this._loaded)
+            return;
+        // Never drop data: if a write is in flight, write again once it finishes.
+        if (this._saving) {
+            this._saveAgain = true;
+            return;
+        }
+        this._prune();
+        const json = JSON.stringify(this._history);
+        if (json === this._savedJson)
+            return;
+
+        this._saving = true;
+        try {
+            await this._file.get_parent()!.make_directory_async(GLib.PRIORITY_DEFAULT, null).catch(e => {
+                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS))
+                    throw e;
+            });
+            await this._file.replace_contents_async(new TextEncoder().encode(json), null, false,
+                Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+            this._savedJson = json;
+        } catch (e) {
+            logError(e as Error, 'SpeedMeter: Failed to save traffic history');
+        } finally {
+            this._saving = false;
+        }
+        if (this._saveAgain) {
+            this._saveAgain = false;
+            await this.save();
+        }
+    }
+
+    update(rx: number, tx: number): void {
+        if (!this._loaded) {
+            this._pending.rx += rx;
+            this._pending.tx += tx;
+            return;
+        }
+        if (rx === 0 && tx === 0)
+            return;
+        const now = new Date();
+        addTraffic(this._history.daily, dayKey(now), rx, tx);
+        addTraffic(this._history.monthly, monthKey(now), rx, tx);
+    }
+
+    updateAppUsage(appName: string, bytes: number): void {
+        if (bytes <= 0)
+            return;
+        const month = this._history.appUsage[monthKey(new Date())] ??= {};
+        month[appName] = (month[appName] ?? 0) + bytes;
     }
 
     getDailyData(): Record<string, TrafficData> {
         return this._history.daily;
     }
 
-    getMonthlyData(): Record<string, TrafficData> {
-        return this._history.monthly;
-    }
-
-    async save(): Promise<void> {
-        if (!this._loaded) return;
-        // A save already in flight: write again once it finishes, so the latest data is never dropped.
-        if (this._saving) {
-            this._saveQueued = true;
-            return;
-        }
-        const json = JSON.stringify(this._history);
-        if (json === this._lastSavedJson) return;
-
-        this._saving = true;
-        try {
-            if (!this._dirReady) {
-                await this._makeParentDir();
-                this._dirReady = true;
-            }
-            await new Promise<void>((resolve, reject) => {
-                this._file.replace_contents_async(
-                    UTF8_ENCODER.encode(json),
-                    null,
-                    false,
-                    Gio.FileCreateFlags.REPLACE_DESTINATION,
-                    null,
-                    (file, res) => {
-                        try {
-                            const [ok] = file!.replace_contents_finish(res);
-                            if (ok) this._lastSavedJson = json;
-                            resolve();
-                        } catch (e) {
-                            reject(e);
-                        }
-                    }
-                );
-            });
-        } catch (e) {
-            logError(e as Error, 'SpeedMeter: Failed to save stats');
-        } finally {
-            this._saving = false;
-        }
-        if (this._saveQueued) {
-            this._saveQueued = false;
-            await this.save();
-        }
-    }
-
-    private _makeParentDir(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this._file.get_parent()!.make_directory_async(GLib.PRIORITY_DEFAULT, null, (dir, res) => {
-                try {
-                    dir!.make_directory_finish(res);
-                    resolve();
-                } catch (e) {
-                    if ((e as GLib.Error).matches?.(Gio.io_error_quark(), Gio.IOErrorEnum.EXISTS)) resolve();
-                    else reject(e);
-                }
-            });
-        });
-    }
-
-    update(rxBytes: number, txBytes: number): void {
-        if (rxBytes === 0 && txBytes === 0) return;
-
-        if (!this._loaded) {
-            this._pendingUpdates.push({ rx: rxBytes, tx: txBytes });
-            return;
-        }
-
-        const now = new Date();
-        const dayKey = this._getDayKey(now);
-        const monthKey = dayKey.substring(0, 7);
-
-        this._updateKey(this._history.daily, dayKey, rxBytes, txBytes);
-        this._updateKey(this._history.monthly, monthKey, rxBytes, txBytes);
-
-        if (now.getMinutes() === 0 && now.getSeconds() < 2) {
-            this._pruneHistory();
-        }
-    }
-
-    updateAppUsage(appName: string, bytes: number): void {
-        if (!appName || bytes <= 0) return;
-        const monthKey = this._getDayKey(new Date()).substring(0, 7);
-        if (!this._history.appUsage) this._history.appUsage = {};
-        if (!this._history.appUsage[monthKey]) this._history.appUsage[monthKey] = {};
-        const current = this._history.appUsage[monthKey][appName] || 0;
-        this._history.appUsage[monthKey][appName] = current + bytes;
-    }
-
-    getMonthlyAppUsage(): { appName: string; bytes: number }[] {
-        const monthKey = this._getDayKey(new Date()).substring(0, 7);
-        const dict = this._history.appUsage?.[monthKey] ?? {};
-        const list = Object.entries(dict).map(([appName, bytes]) => ({ appName, bytes }));
-        list.sort((a, b) => b.bytes - a.bytes);
-        return list;
-    }
-
-    exportToCsv(): string {
-        const lines: string[] = ['Date,Type,Download_Bytes,Upload_Bytes,Total_Bytes'];
-        
-        const sortedDailyKeys = Object.keys(this._history.daily).sort();
-        for (const date of sortedDailyKeys) {
-            const data = this._history.daily[date];
-            lines.push(`${date},Daily,${data.rx},${data.tx},${data.rx + data.tx}`);
-        }
-
-        const sortedMonthlyKeys = Object.keys(this._history.monthly).sort();
-        for (const month of sortedMonthlyKeys) {
-            const data = this._history.monthly[month];
-            lines.push(`${month},Monthly,${data.rx},${data.tx},${data.rx + data.tx}`);
-        }
-
-        return lines.join('\n');
-    }
-
-    private _pruneHistory(): void {
-        const threshold = Date.now() - (365 * 24 * 60 * 60 * 1000);
-        
-        for (const key in this._history.daily) {
-            if (new Date(key).getTime() < threshold) {
-                delete this._history.daily[key];
-            }
-        }
-        
-        const monthThreshold = Date.now() - (24 * 30 * 24 * 60 * 60 * 1000);
-        for (const key in this._history.monthly) {
-            if (new Date(key + "-01").getTime() < monthThreshold) {
-                delete this._history.monthly[key];
-            }
-        }
-    }
-
-    private _updateKey(dict: Record<string, TrafficData>, key: string, rx: number, tx: number): void {
-        const entry = dict[key];
-        if (!entry) {
-            dict[key] = { rx, tx };
-        } else {
-            entry.rx += rx;
-            entry.tx += tx;
-        }
-    }
-
-    private _getDayKey(date: Date): string {
-        const y = date.getFullYear();
-        const m = date.getMonth() + 1;
-        const d = date.getDate();
-        
-        // Manual string building is faster than toISOString for keys
-        return `${y}-${m < 10 ? '0' + m : m}-${d < 10 ? '0' + d : d}`;
-    }
-
     getToday(): TrafficData {
-        return this._history.daily[this._getDayKey(new Date())] || { rx: 0, tx: 0 };
+        return this._history.daily[dayKey(new Date())] ?? { rx: 0, tx: 0 };
     }
 
     getThisMonth(): TrafficData {
-        return this._history.monthly[this._getDayKey(new Date()).substring(0, 7)] || { rx: 0, tx: 0 };
+        return this._history.monthly[monthKey(new Date())] ?? { rx: 0, tx: 0 };
     }
 
     getLastMonth(): TrafficData {
         const now = new Date();
-        let y = now.getFullYear();
-        let m = now.getMonth(); 
-        
-        if (m === 0) { 
-            m = 12;
-            y -= 1;
+        return this._history.monthly[monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1))] ?? { rx: 0, tx: 0 };
+    }
+
+    getMonthlyAppUsage(): { appName: string; bytes: number }[] {
+        const usage = this._history.appUsage[monthKey(new Date())] ?? {};
+        return Object.entries(usage)
+            .map(([appName, bytes]) => ({ appName, bytes }))
+            .sort((a, b) => b.bytes - a.bytes);
+    }
+
+    exportToCsv(): string {
+        const lines = ['Date,Type,Download_Bytes,Upload_Bytes,Total_Bytes'];
+        for (const [type, dict] of [['Daily', this._history.daily], ['Monthly', this._history.monthly]] as const) {
+            for (const key of Object.keys(dict).sort())
+                lines.push(`${key},${type},${dict[key].rx},${dict[key].tx},${dict[key].rx + dict[key].tx}`);
         }
-        
-        const key = `${y}-${m < 10 ? '0' + m : m}`;
-        return this._history.monthly[key] || { rx: 0, tx: 0 };
+        return lines.join('\n');
+    }
+
+    private _prune(): void {
+        const now = new Date();
+        const oldestDay = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - KEEP_DAYS));
+        const oldestMonth = monthKey(new Date(now.getFullYear(), now.getMonth() - KEEP_MONTHS, 1));
+        // Keys are zero-padded dates, so string comparison orders them chronologically.
+        for (const key of Object.keys(this._history.daily)) {
+            if (key < oldestDay)
+                delete this._history.daily[key];
+        }
+        for (const dict of [this._history.monthly, this._history.appUsage]) {
+            for (const key of Object.keys(dict)) {
+                if (key < oldestMonth)
+                    delete dict[key];
+            }
+        }
     }
 }

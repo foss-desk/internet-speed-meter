@@ -1,0 +1,652 @@
+# Translation template for Internet Speed Meter (GNOME Shell extension).
+# Copyright (C) 2026 MD Mojahid
+# This file is distributed under the same license as the Internet Speed Meter package (GPL-3.0-or-later).
+# MD Mojahid <aammojahid@gmail.com>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Internet Speed Meter 1.5.3\n"
+"Report-Msgid-Bugs-To: aammojahid@gmail.com\n"
+"POT-Creation-Date: 2026-11-14 21:09+0600\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: dist/dashboard.js:29
+msgid "EXCELLENT"
+msgstr ""
+
+#: dist/dashboard.js:30
+msgid "GOOD"
+msgstr ""
+
+#: dist/dashboard.js:31
+msgid "FAIR"
+msgstr ""
+
+#: dist/dashboard.js:32
+msgid "POOR"
+msgstr ""
+
+#: dist/dashboard.js:36
+msgid "Disconnected"
+msgstr ""
+
+#: dist/dashboard.js:38
+msgid "WiFi"
+msgstr ""
+
+#: dist/dashboard.js:40
+msgid "Ethernet"
+msgstr ""
+
+#: dist/dashboard.js:42
+msgid "Mobile"
+msgstr ""
+
+#: dist/dashboard.js:44 dist/dashboard.js:108
+msgid "VPN Tunnel"
+msgstr ""
+
+#: dist/dashboard.js:45
+msgid "Wired"
+msgstr ""
+
+#: dist/dashboard.js:107
+msgid "Connection"
+msgstr ""
+
+#: dist/dashboard.js:109
+msgid "Local IP"
+msgstr ""
+
+#: dist/dashboard.js:110
+msgid "Public IP"
+msgstr ""
+
+#: dist/dashboard.js:130
+msgid "MEASURING..."
+msgstr ""
+
+#: dist/dashboard.js:144 dist/speedtestPanel.js:161 dist/speedtestPanel.js:243
+msgid "Ping"
+msgstr ""
+
+#: dist/dashboard.js:146 dist/speedtestPanel.js:162
+msgid "Jitter"
+msgstr ""
+
+#: dist/dashboard.js:150 dist/indicator.js:303
+msgid "System"
+msgstr ""
+
+#: dist/dashboard.js:152
+msgid "Active App:"
+msgstr ""
+
+#: dist/dashboard.js:160
+msgid "Live Wave"
+msgstr ""
+
+#: dist/dashboard.js:161
+msgid "30-Day Peak"
+msgstr ""
+
+#: dist/dashboard.js:230
+msgid "none"
+msgstr ""
+
+#: dist/dashboard.js:234
+msgid "None"
+msgstr ""
+
+#: dist/dashboard.js:237 dist/dashboard.js:258
+msgid "Unavailable"
+msgstr ""
+
+#: dist/graph.js:110
+#, javascript-format
+msgid "Peak: %s"
+msgstr ""
+
+#: dist/graph.js:113
+msgid "now"
+msgstr ""
+
+#: dist/graph.js:172
+#, javascript-format
+msgid "Monthly Peak: %s"
+msgstr ""
+
+#: dist/graph.js:174 dist/graph.js:175
+#, javascript-format
+msgid "Day %d"
+msgstr ""
+
+#: dist/indicator.js:115
+msgid "Today"
+msgstr ""
+
+#: dist/indicator.js:116
+msgid "This Month"
+msgstr ""
+
+#: dist/indicator.js:117
+msgid "Last Month"
+msgstr ""
+
+#: dist/indicator.js:118
+msgid "Current Session"
+msgstr ""
+
+#: dist/indicator.js:127
+msgid "Reset"
+msgstr ""
+
+#: dist/indicator.js:133
+msgid "Speedtest"
+msgstr ""
+
+#: dist/indicator.js:135
+msgid "Settings"
+msgstr ""
+
+#: dist/indicator.js:298
+msgid "Disabled"
+msgstr ""
+
+#: dist/indicator.js:323
+#, javascript-format
+msgid "Monthly data quota of %d GB reached."
+msgstr ""
+
+#: dist/indicator.js:328
+#, javascript-format
+msgid "80%% of the monthly data quota (%d GB) used."
+msgstr ""
+
+#: dist/prefs.js:40
+msgid "Display & Monitor"
+msgstr ""
+
+#: dist/prefs.js:45
+msgid "General"
+msgstr ""
+
+#: dist/prefs.js:46
+msgid "Configure network speed sampling rate and measurement units."
+msgstr ""
+
+#: dist/prefs.js:49
+msgid "Refresh Interval (ms)"
+msgstr ""
+
+#: dist/prefs.js:49
+msgid "Lower values are more responsive but use more CPU (default: 1500)"
+msgstr ""
+
+#: dist/prefs.js:50
+msgid "Monitored Interface"
+msgstr ""
+
+#: dist/prefs.js:53
+msgid "Display in Bits (Mbps / Kbps)"
+msgstr ""
+
+#: dist/prefs.js:53
+msgid "Show speeds in bits per second instead of bytes per second"
+msgstr ""
+
+#: dist/prefs.js:54
+msgid "Adaptive Power & Battery Saver"
+msgstr ""
+
+#: dist/prefs.js:54
+msgid ""
+"Automatically reduce polling frequency when on battery power to conserve "
+"energy"
+msgstr ""
+
+#: dist/prefs.js:56
+msgid "Visibility & Auto-Hide"
+msgstr ""
+
+#: dist/prefs.js:57
+msgid "Customize top panel speed indicators and idle behavior."
+msgstr ""
+
+#: dist/prefs.js:60
+msgid "Show Download Speed"
+msgstr ""
+
+#: dist/prefs.js:60
+msgid "Display incoming bandwidth rate on the top panel"
+msgstr ""
+
+#: dist/prefs.js:61
+msgid "Show Upload Speed"
+msgstr ""
+
+#: dist/prefs.js:61
+msgid "Display outgoing bandwidth rate on the top panel"
+msgstr ""
+
+#: dist/prefs.js:62
+msgid "Track Traffic per Focused App"
+msgstr ""
+
+#: dist/prefs.js:62
+msgid ""
+"Attribute traffic to the focused application (an approximation, not per-"
+"process)"
+msgstr ""
+
+#: dist/prefs.js:63
+msgid "Auto-Hide When Idle"
+msgstr ""
+
+#: dist/prefs.js:63
+msgid ""
+"Temporarily hide panel speed numbers when total speed is below threshold"
+msgstr ""
+
+#: dist/prefs.js:64
+msgid "Idle Threshold (KB/s)"
+msgstr ""
+
+#: dist/prefs.js:64
+msgid "Speed threshold under which panel indicators hide"
+msgstr ""
+
+#: dist/prefs.js:66
+msgid "Data & History"
+msgstr ""
+
+#: dist/prefs.js:71
+msgid "Data Quota & Alerts"
+msgstr ""
+
+#: dist/prefs.js:72
+msgid "Set monthly traffic limits and desktop warning notifications."
+msgstr ""
+
+#: dist/prefs.js:75
+msgid "Monthly Data Quota (GB)"
+msgstr ""
+
+#: dist/prefs.js:75
+msgid "Set to 0 to disable quota warnings"
+msgstr ""
+
+#: dist/prefs.js:76
+msgid "Desktop Quota Notifications"
+msgstr ""
+
+#: dist/prefs.js:76
+msgid "Show system desktop notifications when reaching 80% and 100% of quota"
+msgstr ""
+
+#: dist/prefs.js:78
+msgid "Data Export"
+msgstr ""
+
+#: dist/prefs.js:79
+msgid "Export traffic usage history logs to CSV format."
+msgstr ""
+
+#: dist/prefs.js:83
+msgid "Export Traffic History (CSV)"
+msgstr ""
+
+#: dist/prefs.js:84
+msgid "Save daily and monthly bandwidth records to a CSV file"
+msgstr ""
+
+#: dist/prefs.js:87
+msgid "Export CSV"
+msgstr ""
+
+#: dist/prefs.js:95
+msgid "Monthly Application Traffic"
+msgstr ""
+
+#: dist/prefs.js:96
+msgid "Traffic recorded this month while each application was focused."
+msgstr ""
+
+#: dist/prefs.js:104
+msgid "No Application Traffic Recorded Yet"
+msgstr ""
+
+#: dist/prefs.js:105
+msgid ""
+"Bandwidth will be attributed to applications as network activity occurs."
+msgstr ""
+
+#: dist/prefs.js:111
+#, javascript-format
+msgid "Monthly total: %s"
+msgstr ""
+
+#: dist/prefs.js:118
+msgid "Export Traffic History"
+msgstr ""
+
+#: dist/prefs.js:132
+#, javascript-format
+msgid "Exported to %s"
+msgstr ""
+
+#: dist/prefs.js:135
+#, javascript-format
+msgid "Export failed: %s"
+msgstr ""
+
+#: dist/speedtestPanel.js:19
+msgid "New York, US"
+msgstr ""
+
+#: dist/speedtestPanel.js:20
+msgid "San Francisco, US"
+msgstr ""
+
+#: dist/speedtestPanel.js:21
+msgid "Toronto, CA"
+msgstr ""
+
+#: dist/speedtestPanel.js:22
+msgid "São Paulo, BR"
+msgstr ""
+
+#: dist/speedtestPanel.js:23
+msgid "London, UK"
+msgstr ""
+
+#: dist/speedtestPanel.js:24
+msgid "Frankfurt, DE"
+msgstr ""
+
+#: dist/speedtestPanel.js:25
+msgid "Dubai, AE"
+msgstr ""
+
+#: dist/speedtestPanel.js:26
+msgid "Mumbai, IN"
+msgstr ""
+
+#: dist/speedtestPanel.js:27
+msgid "Singapore, SG"
+msgstr ""
+
+#: dist/speedtestPanel.js:28
+msgid "Tokyo, JP"
+msgstr ""
+
+#: dist/speedtestPanel.js:29
+msgid "Sydney, AU"
+msgstr ""
+
+#: dist/speedtestPanel.js:41
+#, javascript-format
+msgid "%d km"
+msgstr ""
+
+#: dist/speedtestPanel.js:45
+msgid "The test failed. Check your connection and try again."
+msgstr ""
+
+#: dist/speedtestPanel.js:47
+msgid "Good for browsing, email and SD video."
+msgstr ""
+
+#: dist/speedtestPanel.js:49
+msgid "Good for HD streaming and video calls."
+msgstr ""
+
+#: dist/speedtestPanel.js:50
+msgid "Fast enough for 4K streaming and large downloads."
+msgstr ""
+
+#: dist/speedtestPanel.js:96
+msgid "Back"
+msgstr ""
+
+#: dist/speedtestPanel.js:103
+msgid "Speed Test"
+msgstr ""
+
+#: dist/speedtestPanel.js:104
+msgid "via public speedtest.net servers"
+msgstr ""
+
+#: dist/speedtestPanel.js:127
+msgid "Choose server"
+msgstr ""
+
+#: dist/speedtestPanel.js:159 dist/speedtestPanel.js:271
+#: dist/speedtestPanel.js:289
+msgid "Download"
+msgstr ""
+
+#: dist/speedtestPanel.js:160 dist/speedtestPanel.js:271
+msgid "Upload"
+msgstr ""
+
+#: dist/speedtestPanel.js:163
+msgid "Loss"
+msgstr ""
+
+#: dist/speedtestPanel.js:195
+msgid "Choose a server, then press Start."
+msgstr ""
+
+#: dist/speedtestPanel.js:195 dist/speedtestPanel.js:285
+msgid "Start"
+msgstr ""
+
+#: dist/speedtestPanel.js:205
+msgid "Finding nearby servers…"
+msgstr ""
+
+#: dist/speedtestPanel.js:225
+msgid "Cancel"
+msgstr ""
+
+#: dist/speedtestPanel.js:229
+msgid "Connecting"
+msgstr ""
+
+#: dist/speedtestPanel.js:230
+msgid "Finding the best server…"
+msgstr ""
+
+#: dist/speedtestPanel.js:242
+msgid "Measuring latency…"
+msgstr ""
+
+#: dist/speedtestPanel.js:243
+msgid "ms"
+msgstr ""
+
+#: dist/speedtestPanel.js:245 dist/speedtestPanel.js:247
+#: dist/speedtestPanel.js:248 dist/speedtestPanel.js:292
+msgid "N/A"
+msgstr ""
+
+#: dist/speedtestPanel.js:250
+msgid "Measuring download speed…"
+msgstr ""
+
+#: dist/speedtestPanel.js:252
+msgid "Measuring upload speed…"
+msgstr ""
+
+#: dist/speedtestPanel.js:271 dist/speedtestPanel.js:289
+#: dist/speedtestPanel.js:299
+msgid "Mbps"
+msgstr ""
+
+#: dist/speedtestPanel.js:285
+msgid "Test cancelled."
+msgstr ""
+
+#: dist/speedtestPanel.js:291
+msgid "Run Again"
+msgstr ""
+
+#: dist/speedtestPanel.js:292
+msgid "Speedtest Complete"
+msgstr ""
+
+#: dist/speedtestPanel.js:292
+#, javascript-format
+msgid "Download: %s Mbps | Upload: %s Mbps | Ping: %s"
+msgstr ""
+
+#: dist/speedtestPanel.js:295
+msgid "Try Again"
+msgstr ""
+
+#: dist/speedtestPanel.js:299
+msgid "Ready"
+msgstr ""
+
+#: dist/speedtestPanel.js:328
+#, javascript-format
+msgid "Automatic · %s"
+msgstr ""
+
+#: dist/speedtestPanel.js:332 dist/speedtestPanel.js:357
+msgid "Best server near this city"
+msgstr ""
+
+#: dist/speedtestPanel.js:335 dist/speedtestPanel.js:352
+msgid "Automatic"
+msgstr ""
+
+#: dist/speedtestPanel.js:337 dist/speedtestPanel.js:352
+msgid "Lowest ping of the nearest servers"
+msgstr ""
+
+#: dist/speedtestPanel.js:338
+msgid "Nearest server with the lowest ping"
+msgstr ""
+
+#: dist/speedtestPanel.js:351
+msgid "Near you"
+msgstr ""
+
+#: dist/speedtestPanel.js:355
+msgid "Other regions"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:8
+msgid "Refresh interval in milliseconds"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:9
+msgid ""
+"How frequently the network speed is polled from /proc/net/dev. Lower values "
+"give more responsive readings but consume more CPU. Recommended range: 1000–"
+"3000."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:18
+msgid "Display speed in bits per second"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:19
+msgid ""
+"When true, speeds are shown in Kbps/Mbps (bits). When false, speeds are "
+"shown in KB/s/MB/s (bytes). Default is bytes (false)."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:28
+msgid "Show upload speed"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:29
+msgid "Whether to display the upload (TX) speed in the panel."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:34
+msgid "Show download speed"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:35
+msgid "Whether to display the download (RX) speed in the panel."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:40
+msgid "Monitored Network Interface"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:41
+msgid ""
+"Specific interface name (e.g. wlan0, eth0, tun0) or empty string to sum all "
+"active interfaces."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:46
+msgid "Monthly Data Quota in GB"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:47
+msgid ""
+"Monthly data usage limit in Gigabytes. Set to 0 to disable data quota "
+"warnings."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:52
+msgid "Enable Data Quota Desktop Notifications"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:53
+msgid ""
+"Whether to trigger system desktop notifications when reaching 80% and 100% "
+"data quota."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:58
+msgid "Auto-hide panel when network is idle"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:59
+msgid ""
+"Whether to hide the indicator from top panel when overall network speed is "
+"below threshold."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:64
+msgid "Idle threshold in KB/s"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:65
+msgid ""
+"Speed threshold in KB/s below which the indicator is hidden when auto-hide "
+"is enabled."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:70
+msgid "Adaptive Power and Data Saver"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:71
+msgid ""
+"Automatically increases the polling interval while running on battery power."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:76
+msgid "Track traffic per focused application"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:77
+msgid ""
+"Show the focused application in the menu and attribute traffic to whichever "
+"application is focused. This is an approximation, not per-process accounting."
+msgstr ""
