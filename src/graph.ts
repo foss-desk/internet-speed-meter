@@ -42,6 +42,7 @@ export class ActivityGraph extends St.DrawingArea {
     private _dailyTotals: number[] = [];
     private _monthlyPeak = 0;
     private _lastUpdateDay = -1;
+    private _fonts = new Map<number, Pango.FontDescription>();
 
     constructor() {
         super({ style_class: 'speed-meter-graph', x_expand: true, y_expand: true });
@@ -210,9 +211,13 @@ export class ActivityGraph extends St.DrawingArea {
     // Pango rather than Cairo's toy text API, which has no font fallback (the arrows drew as boxes).
     // `x` is the left edge (the right edge when alignRight) and `y` the baseline; returns the text width.
     private _text(cr: Cairo.Context, text: string, x: number, y: number, sizePx: number, alignRight = false): number {
+        let font = this._fonts.get(sizePx);
+        if (!font) {
+            font = Pango.FontDescription.from_string('Sans');
+            font.set_absolute_size(sizePx * Pango.SCALE);
+            this._fonts.set(sizePx, font);
+        }
         const layout = PangoCairo.create_layout(cr);
-        const font = Pango.FontDescription.from_string('Sans');
-        font.set_absolute_size(sizePx * Pango.SCALE);
         layout.set_font_description(font);
         layout.set_text(text, -1);
         const [width] = layout.get_pixel_size();

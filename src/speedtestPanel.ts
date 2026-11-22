@@ -289,7 +289,7 @@ export class SpeedTestPanel extends PopupMenu.PopupBaseMenuItem {
             // A cancelled test was already reset by _cancel() or by destroying the panel.
             if (isCancelled(e))
                 return;
-            logError(e as Error, 'SpeedMeter: Speed test failed');
+            console.error('SpeedMeter: Speed test failed', e);
             this._finish(0, 0, null);
         } finally {
             if (this._test === test) {
@@ -324,7 +324,7 @@ export class SpeedTestPanel extends PopupMenu.PopupBaseMenuItem {
             this._setHero('download', _('Download'), downMbps.toFixed(1), _('Mbps'));
             this._statusLabel.text = rating(downMbps);
             this._setAction('view-refresh-symbolic', _('Run Again'), true);
-            Main.notify(_('Speedtest Complete'),
+            Main.notify(_('Speed Test Complete'),
                 _('Download: %s Mbps | Upload: %s Mbps | Ping: %s').format(downMbps.toFixed(1), upMbps.toFixed(1), ping ?? _('N/A')));
         } else {
             this._showIdle(rating(0), _('Try Again'));

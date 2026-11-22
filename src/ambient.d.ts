@@ -1,4 +1,4 @@
-// Type-only: GJS globals (TextDecoder, logError, ...) and the gi:// / resource:// module types.
+// Type-only: GJS globals (TextDecoder, console, ...) and the gi:// / resource:// module types.
 import '@girs/gjs';
 import '@girs/gjs/ambient';
 import '@girs/gjs/dom';

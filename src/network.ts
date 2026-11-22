@@ -8,7 +8,9 @@ import Soup from 'gi://Soup?version=3.0';
 Gio._promisify(Gio.File.prototype, 'load_contents_async');
 Gio._promisify(Gio.DBusConnection.prototype, 'call');
 Gio._promisify(Gio.SocketClient.prototype, 'connect_async');
+Gio._promisify(Gio.InputStream.prototype, 'read_bytes_async');
 Gio._promisify(Soup.Session.prototype, 'send_and_read_async');
+Gio._promisify(Soup.Session.prototype, 'send_async');
 
 export const USER_AGENT = 'internet-speed-meter (GNOME Shell extension; +https://github.com/foss-desk/internet-speed-meter)';
 
@@ -46,6 +48,32 @@ export function parseNetDev(text: string): InterfaceCounters[] {
     return result;
 }
 
+// Bytes moved since the previous sample, per interface so that an interface appearing,
+// disappearing or restarting its counters never shows up as traffic. Updates `previous`.
+export function trafficDelta(previous: Map<string, InterfaceCounters>, current: InterfaceCounters[]): { rx: number; tx: number } {
+    let rx = 0;
+    let tx = 0;
+    for (const counters of current) {
+        const before = previous.get(counters.name);
+        if (before) {
+            rx += Math.max(0, counters.rx - before.rx);
+            tx += Math.max(0, counters.tx - before.tx);
+        }
+    }
+    previous.clear();
+    for (const counters of current)
+        previous.set(counters.name, counters);
+    return { rx, tx };
+}
+
+// Hardware interfaces have a device link in sysfs; tunnels, bridges and veths do not, and
+// counting them as well would count the same traffic twice. PPP is virtual but has no
+// hardware counterpart in /proc/net/dev.
+export function isPhysicalInterface(name: string): boolean {
+    return name.startsWith('ppp') || GLib.file_test(`/sys/class/net/${name}/device`, GLib.FileTest.EXISTS);
+}
+
+// Parses /proc/net/route.
 export function parseDefaultRoute(text: string): string {
     for (const line of text.split('\n').slice(1)) {
         const [iface, destination] = line.trim().split(/\s+/);
@@ -55,14 +83,24 @@ export function parseDefaultRoute(text: string): string {
     return '';
 }
 
-export async function getLocalAddress(cancellable: Gio.Cancellable | null): Promise<string> {
+// Parses /proc/net/ipv6_route: destination, prefix length, ..., interface last.
+export function parseDefaultRoute6(text: string): string {
+    for (const line of text.split('\n')) {
+        const fields = line.trim().split(/\s+/);
+        if (fields.length === 10 && /^0+$/.test(fields[0]) && fields[1] === '00' && fields[9] !== 'lo')
+            return fields[9];
+    }
+    return '';
+}
+
+export async function getLocalAddress(ipv6: boolean, cancellable: Gio.Cancellable | null): Promise<string> {
     const client = new Gio.SocketClient({
-        family: Gio.SocketFamily.IPV4,
+        family: ipv6 ? Gio.SocketFamily.IPV6 : Gio.SocketFamily.IPV4,
         type: Gio.SocketType.DATAGRAM,
         protocol: Gio.SocketProtocol.UDP,
     });
     // Connecting a UDP socket only selects the outgoing route's source address; nothing is sent.
-    const target = Gio.InetSocketAddress.new_from_string('1.1.1.1', 53);
+    const target = Gio.InetSocketAddress.new_from_string(ipv6 ? '2606:4700:4700::1111' : '1.1.1.1', 53);
     const connection = await client.connect_async(target, cancellable);
     const local = connection.get_local_address() as Gio.InetSocketAddress;
     connection.close_async(GLib.PRIORITY_DEFAULT, null, null);

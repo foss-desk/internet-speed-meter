@@ -8,9 +8,14 @@ import { readFile } from './network.js';
 
 Gio._promisify(Gio.File.prototype, 'make_directory_async');
 Gio._promisify(Gio.File.prototype, 'replace_contents_async');
+Gio._promisify(Gio.File.prototype, 'set_display_name_async');
 
 const KEEP_DAYS = 365;
 const KEEP_MONTHS = 24;
+
+// The last write started by any StatsManager. After a quick lock/unlock the new instance
+// must not read the file while the old one is still writing it.
+let lastWrite: Promise<void> = Promise.resolve();
 
 export interface TrafficData {
     rx: number;
@@ -42,7 +47,7 @@ function addTraffic(dict: Record<string, TrafficData>, key: string, rx: number, 
 export class StatsManager {
     private _file = Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'internet-speed-meter', 'stats.json']));
     private _history: History = { daily: {}, monthly: {}, appUsage: {} };
-    private _savedJson = '';
+    private _dirty = false;
     private _loaded = false;
     // Traffic counted before the history finished loading.
     private _pending: TrafficData = { rx: 0, tx: 0 };
@@ -60,14 +65,23 @@ export class StatsManager {
     }
 
     private async _load(): Promise<void> {
+        await lastWrite;
         try {
             const text = await readFile(this._file.get_path()!, null);
             const data = JSON.parse(text);
             this._history = { daily: data.daily ?? {}, monthly: data.monthly ?? {}, appUsage: data.appUsage ?? {} };
-            this._savedJson = text;
         } catch (e) {
-            if (!(e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)))
-                logError(e as Error, 'SpeedMeter: Failed to load traffic history');
+            if (!(e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))) {
+                console.error('SpeedMeter: Failed to load traffic history', e);
+                // Keep the unreadable file instead of overwriting it with an empty history.
+                try {
+                    await this._file.set_display_name_async('stats.json.bad', GLib.PRIORITY_DEFAULT, null);
+                } catch (moveError) {
+                    // Stay unloaded, so nothing is ever saved over it.
+                    console.error('SpeedMeter: Failed to move the unreadable traffic history aside', moveError);
+                    return;
+                }
+            }
         }
         this._loaded = true;
         this.update(this._pending.rx, this._pending.tx);
@@ -81,12 +95,22 @@ export class StatsManager {
             this._saveAgain = true;
             return;
         }
-        this._prune();
-        const json = JSON.stringify(this._history);
-        if (json === this._savedJson)
+        if (!this._dirty)
             return;
+        this._prune();
+        this._dirty = false;
 
         this._saving = true;
+        lastWrite = this._write(JSON.stringify(this._history));
+        await lastWrite;
+        this._saving = false;
+        if (this._saveAgain) {
+            this._saveAgain = false;
+            await this.save();
+        }
+    }
+
+    private async _write(json: string): Promise<void> {
         try {
             await this._file.get_parent()!.make_directory_async(GLib.PRIORITY_DEFAULT, null).catch(e => {
                 if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS))
@@ -94,15 +118,9 @@ export class StatsManager {
             });
             await this._file.replace_contents_async(new TextEncoder().encode(json), null, false,
                 Gio.FileCreateFlags.REPLACE_DESTINATION, null);
-            this._savedJson = json;
         } catch (e) {
-            logError(e as Error, 'SpeedMeter: Failed to save traffic history');
-        } finally {
-            this._saving = false;
-        }
-        if (this._saveAgain) {
-            this._saveAgain = false;
-            await this.save();
+            console.error('SpeedMeter: Failed to save traffic history', e);
+            this._dirty = true;
         }
     }
 
@@ -117,13 +135,16 @@ export class StatsManager {
         const now = new Date();
         addTraffic(this._history.daily, dayKey(now), rx, tx);
         addTraffic(this._history.monthly, monthKey(now), rx, tx);
+        this._dirty = true;
     }
 
+    // Before loading, _history is about to be replaced, so the bytes would be lost anyway.
     updateAppUsage(appName: string, bytes: number): void {
-        if (bytes <= 0)
+        if (!this._loaded || bytes <= 0)
             return;
         const month = this._history.appUsage[monthKey(new Date())] ??= {};
         month[appName] = (month[appName] ?? 0) + bytes;
+        this._dirty = true;
     }
 
     getDailyData(): Record<string, TrafficData> {

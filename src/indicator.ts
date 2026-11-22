@@ -16,27 +16,24 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { VERTICAL } from './compat.js';
 import { DashboardSection } from './dashboard.js';
 import { GB, KB, fmtSize, fmtSpeed } from './format.js';
-import { isCancelled, parseNetDev, readFile } from './network.js';
+import { InterfaceCounters, isCancelled, isPhysicalInterface, parseNetDev, readFile, trafficDelta } from './network.js';
 import { SpeedTestPanel } from './speedtestPanel.js';
 import { StatsManager, monthKey } from './stats.js';
 
 const SAVE_INTERVAL_SECS = 60;
 const BATTERY_MIN_INTERVAL_MS = 3000;
-// Larger gaps between two samples mean suspend/resume; the delta would be meaningless.
-const MAX_SAMPLE_GAP_SECS = 5;
+// A gap of more than this many poll intervals means suspend/resume; the delta would be meaningless.
+const MAX_SAMPLE_GAP_INTERVALS = 3;
 // Stats key for traffic while no application is focused.
 const NO_APP = 'System';
-const ACCENT_COLORS = ['blue', 'teal', 'green', 'yellow', 'orange', 'red', 'pink', 'purple', 'slate'];
+
+// Traffic since login. Module scope outlives the indicator, which is destroyed on every
+// screen lock, and is evaluated again only when the shell restarts (a new login).
+const sessionTraffic = { rx: 0, tx: 0 };
 
 interface StatRow {
     total: St.Label;
     detail: St.Label;
-}
-
-interface Sample {
-    rx: number;
-    tx: number;
-    time: number;
 }
 
 function createStatRow(title: string, color: string): { row: St.BoxLayout; labels: StatRow } {
@@ -93,18 +90,27 @@ export class SpeedIndicator extends PanelMenu.Button {
 
     private _tickId = 0;
     private _saveId = 0;
+    private _interval = 0;
+    private _reading = false;
     private _upowerSubscriptionId = 0;
+    private _powerRequest = 0;
     private _onBattery = false;
-    private _previous: Sample | null = null;
-    private _sessionRx = 0;
-    private _sessionTx = 0;
+    private _counters = new Map<string, InterfaceCounters>();
+    private _sampleTime = 0;
+    private _interfaceNames = '';
+    private _physicalInterfaces = new Set<string>();
     private _activeApp: string | null = NO_APP;
-    private _quotaMonth = '';
-    private _quotaWarned = false;
-    private _quotaReached = false;
-    private _accentClass = '';
+
+    private _monitoredInterface = '';
+    private _autoHideIdle = false;
+    private _idleThresholdKb = 0;
+    private _useBits = false;
+    private _showDownload = true;
+    private _showUpload = true;
 
     private _popup: PopupMenu.PopupMenu;
+    private _panelBox: St.BoxLayout;
+    private _idleIcon: St.Icon;
     private _downLabel: St.Label;
     private _sepLabel: St.Label;
     private _upLabel: St.Label;
@@ -119,15 +125,28 @@ export class SpeedIndicator extends PanelMenu.Button {
         this._settings = settings;
         this._name = name;
         this._popup = this.menu as PopupMenu.PopupMenu;
+        this._readSettings();
 
         const panelBox = new St.BoxLayout({ style_class: 'speed-meter-box', y_align: Clutter.ActorAlign.CENTER });
+        this._panelBox = panelBox;
         this._downLabel = new St.Label({ style_class: 'speed-meter-label', y_align: Clutter.ActorAlign.CENTER });
         this._sepLabel = new St.Label({ text: '│', style_class: 'speed-meter-label speed-meter-sep-label', y_align: Clutter.ActorAlign.CENTER });
         this._upLabel = new St.Label({ style_class: 'speed-meter-label', y_align: Clutter.ActorAlign.CENTER });
         panelBox.add_child(this._downLabel);
         panelBox.add_child(this._sepLabel);
         panelBox.add_child(this._upLabel);
-        this.add_child(panelBox);
+        // Shown instead of the numbers while auto-hide is on and the connection is idle,
+        // so the menu stays reachable.
+        this._idleIcon = new St.Icon({
+            icon_name: 'network-transmit-receive-symbolic',
+            style_class: 'system-status-icon',
+            visible: false,
+        });
+        // PanelMenu.Button only allocates its first child.
+        const panelContent = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
+        panelContent.add_child(this._idleIcon);
+        panelContent.add_child(panelBox);
+        this.add_child(panelContent);
         this._updateVisibility();
 
         this._popup.box.add_style_class_name('speed-meter-menu-container');
@@ -156,11 +175,11 @@ export class SpeedIndicator extends PanelMenu.Button {
         const actions = new St.BoxLayout({ x_expand: true, style_class: 'speed-meter-actions-bar' });
         const resetButton = createActionButton('edit-undo-symbolic', _('Reset'), 'speed-meter-button');
         resetButton.connect('clicked', () => {
-            this._sessionRx = 0;
-            this._sessionTx = 0;
+            sessionTraffic.rx = 0;
+            sessionTraffic.tx = 0;
             this._updateStats();
         });
-        const speedTestButton = createActionButton('network-wireless-signal-excellent-symbolic', _('Speedtest'),
+        const speedTestButton = createActionButton('network-wireless-signal-excellent-symbolic', _('Speed Test'),
             'speed-meter-button speed-meter-speedtest-btn');
         speedTestButton.connect('clicked', () => this._showSpeedTest(true));
         const settingsButton = createActionButton('preferences-system-symbolic', _('Settings'), 'speed-meter-button');
@@ -194,7 +213,7 @@ export class SpeedIndicator extends PanelMenu.Button {
             this._interfaceSettings.connectObject('changed::accent-color', () => this._applyAccentColor(), this);
         this._upowerSubscriptionId = Gio.DBus.system.signal_subscribe('org.freedesktop.UPower',
             'org.freedesktop.DBus.Properties', 'PropertiesChanged', '/org/freedesktop/UPower', null,
-            Gio.DBusSignalFlags.NONE, () => this._updatePowerState());
+            Gio.DBusSignalFlags.NONE, (_connection, _sender, _path, _iface, _signal, params) => this._onUPowerChanged(params));
         this.connect('destroy', () => this._releaseResources());
 
         this._applyColorScheme();
@@ -225,7 +244,17 @@ export class SpeedIndicator extends PanelMenu.Button {
         this._stats.save();
     }
 
+    private _readSettings(): void {
+        this._monitoredInterface = this._settings.get_string('monitored-interface').trim();
+        this._autoHideIdle = this._settings.get_boolean('auto-hide-idle');
+        this._idleThresholdKb = this._settings.get_int('idle-threshold-kb');
+        this._useBits = this._settings.get_boolean('use-bits');
+        this._showDownload = this._settings.get_boolean('show-download');
+        this._showUpload = this._settings.get_boolean('show-upload');
+    }
+
     private _onSettingChanged(key: string): void {
+        this._readSettings();
         switch (key) {
         case 'refresh-interval':
             this._restartTimer();
@@ -249,6 +278,7 @@ export class SpeedIndicator extends PanelMenu.Button {
         let interval = this._settings.get_int('refresh-interval');
         if (this._onBattery)
             interval = Math.max(BATTERY_MIN_INTERVAL_MS, interval);
+        this._interval = interval;
         this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, interval, () => {
             this._tick();
             return GLib.SOURCE_CONTINUE;
@@ -256,39 +286,43 @@ export class SpeedIndicator extends PanelMenu.Button {
     }
 
     private async _tick(): Promise<void> {
+        // A slow read must not overlap the next tick.
+        if (this._reading)
+            return;
+        this._reading = true;
         let text: string;
         try {
             text = await readFile('/proc/net/dev', this._cancellable);
         } catch (e) {
             if (!isCancelled(e))
-                logError(e as Error, 'SpeedMeter: Failed to read /proc/net/dev');
+                console.error('SpeedMeter: Failed to read /proc/net/dev', e);
             return;
+        } finally {
+            this._reading = false;
         }
 
-        const iface = this._settings.get_string('monitored-interface').trim();
-        let rx = 0;
-        let tx = 0;
-        for (const counters of parseNetDev(text)) {
-            if (iface ? counters.name !== iface : counters.name === 'lo')
-                continue;
-            rx += counters.rx;
-            tx += counters.tx;
+        const interfaces = parseNetDev(text);
+        const names = interfaces.map(i => i.name).join(' ');
+        if (names !== this._interfaceNames) {
+            this._interfaceNames = names;
+            this._physicalInterfaces = new Set(interfaces.map(i => i.name).filter(isPhysicalInterface));
         }
+        const counted = interfaces.filter(({ name }) => {
+            if (this._monitoredInterface)
+                return name === this._monitoredInterface;
+            // Without any hardware interface (containers, some VMs) count everything but loopback.
+            return this._physicalInterfaces.size > 0 ? this._physicalInterfaces.has(name) : name !== 'lo';
+        });
+        const { rx: deltaRx, tx: deltaTx } = trafficDelta(this._counters, counted);
 
         const now = GLib.get_monotonic_time();
-        const previous = this._previous;
-        this._previous = { rx, tx, time: now };
-        if (!previous)
-            return;
-        const seconds = (now - previous.time) / 1e6;
-        if (seconds <= 0 || seconds > MAX_SAMPLE_GAP_SECS)
+        const seconds = (now - this._sampleTime) / 1e6;
+        this._sampleTime = now;
+        if (seconds <= 0 || seconds > MAX_SAMPLE_GAP_INTERVALS * this._interval / 1000)
             return;
 
-        // Counters restart from zero when an interface goes down and comes back.
-        const deltaRx = Math.max(0, rx - previous.rx);
-        const deltaTx = Math.max(0, tx - previous.tx);
-        this._sessionRx += deltaRx;
-        this._sessionTx += deltaTx;
+        sessionTraffic.rx += deltaRx;
+        sessionTraffic.tx += deltaTx;
         this._stats.update(deltaRx, deltaTx);
         if (this._activeApp)
             this._stats.updateAppUsage(this._activeApp, deltaRx + deltaTx);
@@ -297,15 +331,14 @@ export class SpeedIndicator extends PanelMenu.Button {
         const txPerSec = deltaTx / seconds;
         this._dashboard.pushSample(rxPerSec, txPerSec);
 
-        const idle = this._settings.get_boolean('auto-hide-idle') &&
-            (rxPerSec + txPerSec) / KB < this._settings.get_int('idle-threshold-kb');
-        this.visible = !idle || this._popup.isOpen;
+        const idle = this._autoHideIdle && (rxPerSec + txPerSec) / KB < this._idleThresholdKb;
+        this._panelBox.visible = !idle;
+        this._idleIcon.visible = idle;
 
-        const useBits = this._settings.get_boolean('use-bits');
-        if (this._settings.get_boolean('show-download'))
-            this._downLabel.text = `${fmtSpeed(rxPerSec, useBits)} ↓`;
-        if (this._settings.get_boolean('show-upload'))
-            this._upLabel.text = `${fmtSpeed(txPerSec, useBits)} ↑`;
+        if (this._showDownload)
+            this._downLabel.text = `${fmtSpeed(rxPerSec, this._useBits)} ↓`;
+        if (this._showUpload)
+            this._upLabel.text = `${fmtSpeed(txPerSec, this._useBits)} ↑`;
 
         this._checkQuota();
         if (this._popup.isOpen)
@@ -313,8 +346,8 @@ export class SpeedIndicator extends PanelMenu.Button {
     }
 
     private _updateVisibility(): void {
-        const down = this._settings.get_boolean('show-download');
-        const up = this._settings.get_boolean('show-upload');
+        const down = this._showDownload;
+        const up = this._showUpload;
         // With both hidden, the download label stays as a small "…" so the menu remains reachable.
         this._downLabel.visible = down || !up;
         this._upLabel.visible = up;
@@ -337,7 +370,7 @@ export class SpeedIndicator extends PanelMenu.Button {
         show(rows.today, today.rx, today.tx);
         show(rows.month, month.rx, month.tx);
         show(rows.lastMonth, lastMonth.rx, lastMonth.tx);
-        show(rows.session, this._sessionRx, this._sessionTx);
+        show(rows.session, sessionTraffic.rx, sessionTraffic.tx);
         this._dashboard.updateFromStats(this._stats);
     }
 
@@ -357,30 +390,29 @@ export class SpeedIndicator extends PanelMenu.Button {
         if (quotaGb <= 0)
             return;
 
-        // Warnings fire once per calendar month.
-        const currentMonth = monthKey(new Date());
-        if (this._quotaMonth !== currentMonth) {
-            this._quotaMonth = currentMonth;
-            this._quotaWarned = false;
-            this._quotaReached = false;
-        }
-
         const used = this._stats.getThisMonth();
         const ratio = (used.rx + used.tx) / (quotaGb * GB);
-        const notify = this._settings.get_boolean('quota-notify');
-        if (ratio >= 1 && !this._quotaReached) {
-            this._quotaReached = true;
-            this._quotaWarned = true;
-            if (notify)
-                Main.notify(this._name, _('Monthly data quota of %d GB reached.').format(quotaGb));
-        } else if (ratio >= 0.8 && !this._quotaWarned) {
-            this._quotaWarned = true;
-            if (notify)
-                Main.notify(this._name, _('80%% of the monthly data quota (%d GB) used.').format(quotaGb));
-        }
+        const level = ratio >= 1 ? 100 : ratio >= 0.8 ? 80 : 0;
+
+        // Each level fires once per calendar month. Stored in settings because the
+        // extension is disabled on every screen lock.
+        const month = monthKey(new Date());
+        const [notifiedMonth, notifiedLevel] = this._settings.get_string('quota-notified').split(':');
+        if (level <= (notifiedMonth === month ? Number(notifiedLevel) : 0))
+            return;
+        this._settings.set_string('quota-notified', `${month}:${level}`);
+
+        if (!this._settings.get_boolean('quota-notify'))
+            return;
+        if (level === 100)
+            Main.notify(this._name, _('Monthly data quota of %d GB reached.').format(quotaGb));
+        else
+            Main.notify(this._name, _('80%% of the monthly data quota (%d GB) used.').format(quotaGb));
     }
 
     private async _updatePowerState(): Promise<void> {
+        // A newer request or UPower signal makes this answer stale.
+        const request = ++this._powerRequest;
         let onBattery = false;
         if (this._settings.get_boolean('adaptive-power-saver')) {
             try {
@@ -394,6 +426,19 @@ export class SpeedIndicator extends PanelMenu.Button {
                 // Without UPower there is no battery to save.
             }
         }
+        if (request === this._powerRequest)
+            this._setOnBattery(onBattery);
+    }
+
+    private _onUPowerChanged(params: GLib.Variant): void {
+        const [, changed] = params.recursiveUnpack() as [string, Record<string, unknown>, string[]];
+        if (!('OnBattery' in changed) || !this._settings.get_boolean('adaptive-power-saver'))
+            return;
+        this._powerRequest++;
+        this._setOnBattery(changed.OnBattery as boolean);
+    }
+
+    private _setOnBattery(onBattery: boolean): void {
         if (onBattery !== this._onBattery) {
             this._onBattery = onBattery;
             this._restartTimer();
@@ -425,18 +470,15 @@ export class SpeedIndicator extends PanelMenu.Button {
         this._dashboard.setLightMode(light);
     }
 
+    // The stylesheet is tuned for blue; other accents switch to rules derived from
+    // -st-accent-color, which St has since GNOME 47, the same release as the setting.
     private _applyAccentColor(): void {
-        let accent = 'blue';
-        if (this._interfaceSettings.settings_schema.has_key('accent-color')) {
-            const value = this._interfaceSettings.get_string('accent-color');
-            if (ACCENT_COLORS.includes(value))
-                accent = value;
-        }
-        const accentClass = `accent-${accent}`;
-        if (this._accentClass)
-            this._popup.box.remove_style_class_name(this._accentClass);
-        this._popup.box.add_style_class_name(accentClass);
-        this._accentClass = accentClass;
+        const custom = this._interfaceSettings.settings_schema.has_key('accent-color') &&
+            this._interfaceSettings.get_string('accent-color') !== 'blue';
+        if (custom)
+            this._popup.box.add_style_class_name('speed-meter-accent');
+        else
+            this._popup.box.remove_style_class_name('speed-meter-accent');
     }
 }
 
