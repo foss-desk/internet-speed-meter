@@ -16,6 +16,11 @@ const CHUNK_FAST_SECS = 0.7;
 const CHUNK_SLOW_SECS = 2.5;
 const DOWNLOAD_SIZES = [500, 750, 1000, 1500, 2000, 2500, 3000, 3500];
 const UPLOAD_SIZES = [250000, 500000, 1000000, 2000000, 4000000];
+// Bytes moved while TCP is still ramping up are not counted.
+const RAMP_UP_SECS = 1;
+const READ_CHUNK_BYTES = 64 * 1024;
+// Bytes arrive thousands of times per second on a fast link; the labels need far fewer updates.
+const PROGRESS_INTERVAL_SECS = 0.1;
 
 export interface Server {
     host: string;
@@ -52,6 +57,7 @@ export class SpeedTest {
     private _session = new Soup.Session({ user_agent: USER_AGENT, timeout: 25 });
     private _cancellable = new Gio.Cancellable();
     private _sourceIds = new Set<number>();
+    private _uploadBodies = new Map<number, GLib.Bytes>();
 
     cancel(): void {
         this._cancellable.cancel();
@@ -87,13 +93,14 @@ export class SpeedTest {
     // Probes the candidates in parallel and returns the fastest one that answered in time, else the first.
     async pickFastest(candidates: Server[]): Promise<Server> {
         const pings = new Map<Server, number>();
-        const probes = candidates.map(async server => {
-            const start = monotonicSecs();
-            if (await this._ping(server.host))
-                pings.set(server, monotonicSecs() - start);
+        await this._phase(async cancellable => {
+            const probes = candidates.map(async server => {
+                const start = monotonicSecs();
+                if (await this._ping(server.host, cancellable))
+                    pings.set(server, monotonicSecs() - start);
+            });
+            await this._raceTimeout(Promise.allSettled(probes), PROBE_TIMEOUT_MS);
         });
-        await this._raceTimeout(Promise.allSettled(probes), PROBE_TIMEOUT_MS);
-        this._cancellable.set_error_if_cancelled();
 
         let best = candidates[0];
         let bestPing = Infinity;
@@ -108,12 +115,15 @@ export class SpeedTest {
 
     async measureLatency(host: string): Promise<Latency | null> {
         const samples: number[] = [];
-        for (let i = 0; i < LATENCY_SAMPLES; i++) {
-            const start = monotonicSecs();
-            if (await this._ping(host))
-                samples.push((monotonicSecs() - start) * 1000);
-        }
-        this._cancellable.set_error_if_cancelled();
+        await this._phase(async cancellable => {
+            // Opens the connection, so the TCP and TLS handshakes stay out of the samples.
+            await this._ping(host, cancellable);
+            for (let i = 0; i < LATENCY_SAMPLES; i++) {
+                const start = monotonicSecs();
+                if (await this._ping(host, cancellable))
+                    samples.push((monotonicSecs() - start) * 1000);
+            }
+        });
         if (samples.length === 0)
             return null;
 
@@ -125,48 +135,72 @@ export class SpeedTest {
     }
 
     // Runs CONCURRENCY parallel streams for durationMs and returns the throughput in Mbps.
+    // Bytes are counted as they move, between the end of the ramp-up and the deadline.
     async measureThroughput(host: string, direction: Direction, durationMs: number, onProgress: (mbps: number) => void): Promise<number> {
         const sizes = direction === 'download' ? DOWNLOAD_SIZES : UPLOAD_SIZES;
         const start = monotonicSecs();
+        const countFrom = start + RAMP_UP_SECS;
         const deadline = start + durationMs / 1000;
-        let totalBytes = 0;
-        let done = false;
-        const mbps = () => totalBytes * 8 / 1e6 / Math.max(monotonicSecs() - start, 0.001);
+        let countedBytes = 0;
+        let lastProgress = 0;
+        const mbps = () => countedBytes * 8 / 1e6 / Math.max(Math.min(monotonicSecs(), deadline) - countFrom, 0.001);
+        const onBytes = (bytes: number) => {
+            const now = monotonicSecs();
+            if (now < countFrom || now > deadline)
+                return;
+            countedBytes += bytes;
+            if (now - lastProgress >= PROGRESS_INTERVAL_SECS) {
+                lastProgress = now;
+                onProgress(mbps());
+            }
+        };
 
-        const stream = async () => {
+        const stream = async (cancellable: Gio.Cancellable) => {
             let index = 1;
-            while (!done && monotonicSecs() < deadline && !this._cancellable.is_cancelled()) {
+            while (monotonicSecs() < deadline && !cancellable.is_cancelled()) {
                 const requestStart = monotonicSecs();
-                const bytes = await this._transfer(host, direction, sizes[index]);
-                if (done)
-                    return;
-                if (bytes > 0) {
-                    totalBytes += bytes;
-                    onProgress(mbps());
-                }
+                const ok = direction === 'download'
+                    ? await this._download(host, sizes[index], onBytes, cancellable)
+                    : await this._upload(host, sizes[index], onBytes, cancellable);
                 const requestSecs = monotonicSecs() - requestStart;
-                if (bytes === 0 || requestSecs > CHUNK_SLOW_SECS)
+                if (!ok || requestSecs > CHUNK_SLOW_SECS)
                     index = Math.max(0, index - 1);
                 else if (requestSecs < CHUNK_FAST_SECS)
                     index = Math.min(sizes.length - 1, index + 1);
             }
         };
 
-        const streams = [];
-        for (let i = 0; i < CONCURRENCY; i++)
-            streams.push(stream());
-        // A stalled request must not hold up the result past the test duration.
-        await this._raceTimeout(Promise.all(streams), durationMs + 2000);
-        done = true;
+        await this._phase(async cancellable => {
+            const streams = [];
+            for (let i = 0; i < CONCURRENCY; i++)
+                streams.push(stream(cancellable));
+            await this._raceTimeout(Promise.all(streams), durationMs);
+        });
+        return countedBytes > 0 ? mbps() : 0;
+    }
+
+    // Runs one phase with its own cancellable, cancelled with the test or as soon as the phase
+    // ends, so that requests still in flight cannot skew the next phase. (Soup.Session.abort()
+    // would cancel the test's own cancellable too.)
+    private async _phase(work: (cancellable: Gio.Cancellable) => Promise<void>): Promise<void> {
         this._cancellable.set_error_if_cancelled();
-        return mbps();
+        const cancellable = new Gio.Cancellable();
+        // g_cancellable_connect(): also runs right away if the test is already cancelled.
+        const handlerId = this._cancellable.connect(() => cancellable.cancel());
+        try {
+            await work(cancellable);
+        } finally {
+            this._cancellable.disconnect(handlerId);
+            cancellable.cancel();
+        }
+        this._cancellable.set_error_if_cancelled();
     }
 
     // Resolves to true when the server answered; network errors count as a lost sample.
-    private async _ping(host: string): Promise<boolean> {
+    private async _ping(host: string, cancellable: Gio.Cancellable): Promise<boolean> {
         const message = Soup.Message.new('GET', `https://${host}/speedtest/latency.txt?x=${Math.random()}`);
         try {
-            await this._session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, this._cancellable);
+            await this._session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, cancellable);
             return message.get_status() === Soup.Status.OK;
         } catch (e) {
             if (!isCancelled(e))
@@ -175,23 +209,43 @@ export class SpeedTest {
         }
     }
 
-    // Returns the number of bytes moved, or 0 when the request failed or was cancelled.
-    private async _transfer(host: string, direction: Direction, size: number): Promise<number> {
-        let message: Soup.Message;
-        if (direction === 'download') {
-            message = Soup.Message.new('GET', `https://${host}/speedtest/random${size}x${size}.jpg?x=${Math.random()}`);
-        } else {
-            message = Soup.Message.new('POST', `https://${host}/speedtest/upload.php`);
-            message.set_request_body_from_bytes('application/octet-stream', new GLib.Bytes(new Uint8Array(size)));
-        }
+    // The _download/_upload pair resolves to false when the request failed or was aborted:
+    // a failed chunk only shrinks the next one, and the caller checks for cancellation.
+    private async _download(host: string, size: number, onBytes: (bytes: number) => void, cancellable: Gio.Cancellable): Promise<boolean> {
+        const message = Soup.Message.new('GET', `https://${host}/speedtest/random${size}x${size}.jpg?x=${Math.random()}`);
         try {
-            const body = await this._session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, this._cancellable);
-            if (message.get_status() !== Soup.Status.OK)
-                return 0;
-            return direction === 'download' ? body.get_size() : size;
+            const stream = await this._session.send_async(message, GLib.PRIORITY_DEFAULT, cancellable);
+            try {
+                if (message.get_status() !== Soup.Status.OK)
+                    return false;
+                for (;;) {
+                    const bytes = await stream.read_bytes_async(READ_CHUNK_BYTES, GLib.PRIORITY_DEFAULT, cancellable);
+                    if (bytes.get_size() === 0)
+                        return true;
+                    onBytes(bytes.get_size());
+                }
+            } finally {
+                stream.close_async(GLib.PRIORITY_DEFAULT, null, null);
+            }
         } catch {
-            // A failed chunk only shrinks the next one; the caller checks for cancellation.
-            return 0;
+            return false;
+        }
+    }
+
+    private async _upload(host: string, size: number, onBytes: (bytes: number) => void, cancellable: Gio.Cancellable): Promise<boolean> {
+        let body = this._uploadBodies.get(size);
+        if (!body) {
+            body = new GLib.Bytes(new Uint8Array(size));
+            this._uploadBodies.set(size, body);
+        }
+        const message = Soup.Message.new('POST', `https://${host}/speedtest/upload.php`);
+        message.set_request_body_from_bytes('application/octet-stream', body);
+        message.connect('wrote-body-data', (_message, chunkSize: number) => onBytes(chunkSize));
+        try {
+            await this._session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, cancellable);
+            return message.get_status() === Soup.Status.OK;
+        } catch {
+            return false;
         }
     }
 

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-11-23
+
+### Fixed
+- Traffic is no longer counted twice while a VPN, Docker or a network bridge is up. By default only hardware interfaces are counted; tunnels, bridges and container interfaces carry traffic that already passes through one.
+- Changing the monitored interface, or an interface appearing or disappearing, no longer adds a fake spike (possibly gigabytes) to the daily and monthly history. Counters are now compared per interface.
+- With the refresh interval at 5000 ms almost every sample was thrown away as a suspend/resume gap, so nothing was recorded.
+- Out-of-range settings (for example a refresh interval of 0 set with `gsettings`) are rejected by the schema instead of making the shell poll nonstop.
+- Quota notifications no longer come back after every screen unlock and login; each level now fires once per month.
+- An unreadable `stats.json` is moved aside to `stats.json.bad` instead of being overwritten with an empty history.
+- A quick lock/unlock can no longer lose the last minute of traffic.
+- Speed test: requests left over from one phase are cancelled instead of competing with the next one (inflated ping, low upload). Bytes are counted as they arrive, the first second of TCP ramp-up is skipped, and the connection is opened before the latency samples are taken.
+- With auto-hide on, an icon replaces the numbers while idle, so the menu stays reachable and the panel no longer jumps.
+- The public IP card no longer shows a captive portal's login page, and the first connection-quality sample no longer includes the TLS handshake.
+- IPv6-only networks show the connection and local address instead of "Disconnected".
+- "Current Session" no longer resets on every screen unlock; it now counts from login.
+
+### Changed
+- Fewer settings reads per poll, battery state taken from the UPower signal instead of a second D-Bus call, history saved only when it changed, upload buffers reused, and the speed test updates its labels 10 times a second instead of for every network read.
+- Interface strings: "Speed Test" everywhere, quality levels in normal case, shorter preference titles.
+- Accent colors other than blue follow the system accent through St's `-st-accent-color` (GNOME 47+), so distribution accent palettes and future accents are matched. This replaces nine hard-coded color blocks.
+- `make test` runs the nested shell with its own settings and enables the extension inside it; new `make check` runs unit tests with gjs. Builds use `npm ci` with a committed lockfile.
+
 ## [1.6.0] - 2026-11-14
 
 ### Changed (code structure)

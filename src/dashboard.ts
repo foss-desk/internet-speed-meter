@@ -14,7 +14,9 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { VERTICAL } from './compat.js';
 import { N_ } from './format.js';
 import { ActivityGraph } from './graph.js';
-import { USER_AGENT, fetchText, getLocalAddress, isCancelled, parseDefaultRoute, parseNetDev, readFile } from './network.js';
+import {
+    USER_AGENT, fetchText, getLocalAddress, isCancelled, parseDefaultRoute, parseDefaultRoute6, parseNetDev, readFile,
+} from './network.js';
 import { averageJitter } from './speedtest.js';
 import { StatsManager } from './stats.js';
 
@@ -33,10 +35,10 @@ const VPN_TYPES: { pattern: RegExp; name: string; color: string }[] = [
 ];
 
 const QUALITY_LEVELS: { maxMs: number; label: string; styleClass: string; icon: string }[] = [
-    { maxMs: 30, label: N_('EXCELLENT'), styleClass: 'speed-meter-quality-excellent', icon: 'network-cellular-signal-excellent-symbolic' },
-    { maxMs: 80, label: N_('GOOD'), styleClass: 'speed-meter-quality-good', icon: 'network-cellular-signal-good-symbolic' },
-    { maxMs: 150, label: N_('FAIR'), styleClass: 'speed-meter-quality-fair', icon: 'network-cellular-signal-ok-symbolic' },
-    { maxMs: Infinity, label: N_('POOR'), styleClass: 'speed-meter-quality-poor', icon: 'network-cellular-signal-weak-symbolic' },
+    { maxMs: 30, label: N_('Excellent'), styleClass: 'speed-meter-quality-excellent', icon: 'network-cellular-signal-excellent-symbolic' },
+    { maxMs: 80, label: N_('Good'), styleClass: 'speed-meter-quality-good', icon: 'network-cellular-signal-good-symbolic' },
+    { maxMs: 150, label: N_('Fair'), styleClass: 'speed-meter-quality-fair', icon: 'network-cellular-signal-ok-symbolic' },
+    { maxMs: Infinity, label: N_('Poor'), styleClass: 'speed-meter-quality-poor', icon: 'network-cellular-signal-weak-symbolic' },
 ];
 
 function connectionType(iface: string): string {
@@ -146,7 +148,7 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
 
         const quality = new St.BoxLayout({ x_expand: true, style_class: 'speed-meter-quality-strip' });
         this._qualityBadge = new St.Label({
-            text: _('MEASURING...'),
+            text: _('Measuring…'),
             style_class: 'speed-meter-quality-badge speed-meter-quality-measuring',
             y_align: Clutter.ActorAlign.CENTER,
             x_expand: true,
@@ -218,7 +220,11 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
     startQualityProbe(): void {
         if (this._qualityTimeoutId)
             return;
-        this._probeQuality();
+        // The first request also opens the TLS connection, which would inflate its sample.
+        this._probeQuality(false).then(() => {
+            if (this._qualityTimeoutId)
+                this._probeQuality();
+        });
         this._qualityTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_LOW, QUALITY_PROBE_INTERVAL_SECS, () => {
             this._probeQuality();
             return GLib.SOURCE_CONTINUE;
@@ -256,7 +262,11 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
                 readFile('/proc/net/route', this._cancellable),
                 readFile('/proc/net/dev', this._cancellable),
             ]);
-            const iface = parseDefaultRoute(route);
+            let iface = parseDefaultRoute(route);
+            const ipv6 = !iface;
+            // The file is missing when IPv6 is disabled.
+            if (ipv6)
+                iface = parseDefaultRoute6(await readFile('/proc/net/ipv6_route', this._cancellable).catch(() => ''));
             this._ifaceValue.text = `${connectionType(iface)} (${iface || _('none')})`;
             this._ifaceIcon.icon_name = iface.startsWith('wl') ? 'network-wireless-symbolic' : 'network-wired-symbolic';
 
@@ -266,10 +276,10 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
             this._vpnColor = vpn?.color ?? null;
             this._updateVpnStyle();
 
-            this._localIpValue.text = iface ? await getLocalAddress(this._cancellable) : _('Unavailable');
+            this._localIpValue.text = iface ? await getLocalAddress(ipv6, this._cancellable) : _('Unavailable');
         } catch (e) {
             if (!isCancelled(e))
-                logError(e as Error, 'SpeedMeter: Failed to read network interfaces');
+                console.error('SpeedMeter: Failed to read network interfaces', e);
         }
     }
 
@@ -277,7 +287,8 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
         for (const url of PUBLIC_IP_URLS) {
             try {
                 const ip = (await fetchText(this._session, url, this._cancellable))?.trim();
-                if (ip) {
+                // A captive portal answers with its login page instead.
+                if (ip && GLib.hostname_is_ip_address(ip)) {
                     this._publicIpValue.text = ip;
                     return;
                 }
@@ -289,7 +300,7 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
         this._publicIpValue.text = _('Unavailable');
     }
 
-    private async _probeQuality(): Promise<void> {
+    private async _probeQuality(record = true): Promise<void> {
         const start = GLib.get_monotonic_time();
         try {
             await fetchText(this._session, QUALITY_PROBE_URL, this._cancellable);
@@ -297,6 +308,8 @@ export class DashboardSection extends PopupMenu.PopupBaseMenuItem {
             // Offline or cancelled: keep showing the last measurement.
             return;
         }
+        if (!record)
+            return;
         this._qualitySamples.push((GLib.get_monotonic_time() - start) / 1000);
         if (this._qualitySamples.length > QUALITY_SAMPLES)
             this._qualitySamples.shift();

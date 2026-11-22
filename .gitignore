@@ -1,10 +1,11 @@
 # Dependencies
 node_modules/
-package-lock.json
 venv
+package-lock.json
 
 # Build artifacts
 dist/
+.test-home/
 *.zip
 
 # Local agent context (not for the repo)

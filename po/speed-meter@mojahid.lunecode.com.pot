@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: Internet Speed Meter 1.5.3\n"
+"Project-Id-Version: Internet Speed Meter 1.6.0\n"
 "Report-Msgid-Bugs-To: aammojahid@gmail.com\n"
-"POT-Creation-Date: 2026-11-14 21:09+0600\n"
+"POT-Creation-Date: 2026-11-23 05:11+0600\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,19 +18,19 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 
 #: dist/dashboard.js:29
-msgid "EXCELLENT"
+msgid "Excellent"
 msgstr ""
 
 #: dist/dashboard.js:30
-msgid "GOOD"
+msgid "Good"
 msgstr ""
 
 #: dist/dashboard.js:31
-msgid "FAIR"
+msgid "Fair"
 msgstr ""
 
 #: dist/dashboard.js:32
-msgid "POOR"
+msgid "Poor"
 msgstr ""
 
 #: dist/dashboard.js:36
@@ -70,7 +70,7 @@ msgid "Public IP"
 msgstr ""
 
 #: dist/dashboard.js:130
-msgid "MEASURING..."
+msgid "Measuring…"
 msgstr ""
 
 #: dist/dashboard.js:144 dist/speedtestPanel.js:161 dist/speedtestPanel.js:243
@@ -81,7 +81,7 @@ msgstr ""
 msgid "Jitter"
 msgstr ""
 
-#: dist/dashboard.js:150 dist/indicator.js:303
+#: dist/dashboard.js:150 dist/indicator.js:345
 msgid "System"
 msgstr ""
 
@@ -97,252 +97,234 @@ msgstr ""
 msgid "30-Day Peak"
 msgstr ""
 
-#: dist/dashboard.js:230
+#: dist/dashboard.js:238
 msgid "none"
 msgstr ""
 
-#: dist/dashboard.js:234
+#: dist/dashboard.js:242
 msgid "None"
 msgstr ""
 
-#: dist/dashboard.js:237 dist/dashboard.js:258
+#: dist/dashboard.js:245 dist/dashboard.js:267
 msgid "Unavailable"
 msgstr ""
 
-#: dist/graph.js:110
+#: dist/graph.js:111
 #, javascript-format
 msgid "Peak: %s"
 msgstr ""
 
-#: dist/graph.js:113
+#: dist/graph.js:114
 msgid "now"
 msgstr ""
 
-#: dist/graph.js:172
+#: dist/graph.js:173
 #, javascript-format
 msgid "Monthly Peak: %s"
 msgstr ""
 
-#: dist/graph.js:174 dist/graph.js:175
+#: dist/graph.js:175 dist/graph.js:176
 #, javascript-format
 msgid "Day %d"
 msgstr ""
 
-#: dist/indicator.js:115
+#: dist/indicator.js:139
 msgid "Today"
 msgstr ""
 
-#: dist/indicator.js:116
+#: dist/indicator.js:140
 msgid "This Month"
 msgstr ""
 
-#: dist/indicator.js:117
+#: dist/indicator.js:141
 msgid "Last Month"
 msgstr ""
 
-#: dist/indicator.js:118
+#: dist/indicator.js:142
 msgid "Current Session"
 msgstr ""
 
-#: dist/indicator.js:127
+#: dist/indicator.js:151
 msgid "Reset"
 msgstr ""
 
-#: dist/indicator.js:133
-msgid "Speedtest"
+#: dist/indicator.js:157 dist/speedtestPanel.js:103
+msgid "Speed Test"
 msgstr ""
 
-#: dist/indicator.js:135
+#: dist/indicator.js:159
 msgid "Settings"
 msgstr ""
 
-#: dist/indicator.js:298
+#: dist/indicator.js:340
 msgid "Disabled"
 msgstr ""
 
-#: dist/indicator.js:323
+#: dist/indicator.js:364
 #, javascript-format
 msgid "Monthly data quota of %d GB reached."
 msgstr ""
 
-#: dist/indicator.js:328
+#: dist/indicator.js:366
 #, javascript-format
 msgid "80%% of the monthly data quota (%d GB) used."
 msgstr ""
 
-#: dist/prefs.js:40
-msgid "Display & Monitor"
+#: dist/prefs.js:37
+msgid "Display"
 msgstr ""
 
-#: dist/prefs.js:45
+#: dist/prefs.js:41
 msgid "General"
 msgstr ""
 
-#: dist/prefs.js:46
-msgid "Configure network speed sampling rate and measurement units."
-msgstr ""
-
-#: dist/prefs.js:49
+#: dist/prefs.js:43
 msgid "Refresh Interval (ms)"
 msgstr ""
 
-#: dist/prefs.js:49
+#: dist/prefs.js:43
 msgid "Lower values are more responsive but use more CPU (default: 1500)"
 msgstr ""
 
-#: dist/prefs.js:50
+#: dist/prefs.js:44
 msgid "Monitored Interface"
 msgstr ""
 
-#: dist/prefs.js:53
+#: dist/prefs.js:47
 msgid "Display in Bits (Mbps / Kbps)"
 msgstr ""
 
-#: dist/prefs.js:53
+#: dist/prefs.js:47
 msgid "Show speeds in bits per second instead of bytes per second"
 msgstr ""
 
-#: dist/prefs.js:54
-msgid "Adaptive Power & Battery Saver"
+#: dist/prefs.js:48
+msgid "Save Power on Battery"
 msgstr ""
 
-#: dist/prefs.js:54
-msgid ""
-"Automatically reduce polling frequency when on battery power to conserve "
-"energy"
+#: dist/prefs.js:48
+msgid "Update at most every 3 seconds while on battery"
 msgstr ""
 
-#: dist/prefs.js:56
-msgid "Visibility & Auto-Hide"
+#: dist/prefs.js:49
+msgid "Panel"
 msgstr ""
 
-#: dist/prefs.js:57
-msgid "Customize top panel speed indicators and idle behavior."
-msgstr ""
-
-#: dist/prefs.js:60
+#: dist/prefs.js:51
 msgid "Show Download Speed"
 msgstr ""
 
-#: dist/prefs.js:60
+#: dist/prefs.js:51
 msgid "Display incoming bandwidth rate on the top panel"
 msgstr ""
 
-#: dist/prefs.js:61
+#: dist/prefs.js:52
 msgid "Show Upload Speed"
 msgstr ""
 
-#: dist/prefs.js:61
+#: dist/prefs.js:52
 msgid "Display outgoing bandwidth rate on the top panel"
 msgstr ""
 
-#: dist/prefs.js:62
+#: dist/prefs.js:53
 msgid "Track Traffic per Focused App"
 msgstr ""
 
-#: dist/prefs.js:62
+#: dist/prefs.js:53
 msgid ""
 "Attribute traffic to the focused application (an approximation, not per-"
 "process)"
 msgstr ""
 
-#: dist/prefs.js:63
+#: dist/prefs.js:54
 msgid "Auto-Hide When Idle"
 msgstr ""
 
-#: dist/prefs.js:63
+#: dist/prefs.js:54
 msgid ""
-"Temporarily hide panel speed numbers when total speed is below threshold"
+"Show an icon instead of the numbers while the speed is below the threshold"
 msgstr ""
 
-#: dist/prefs.js:64
+#: dist/prefs.js:55
 msgid "Idle Threshold (KB/s)"
 msgstr ""
 
-#: dist/prefs.js:64
+#: dist/prefs.js:55
 msgid "Speed threshold under which panel indicators hide"
 msgstr ""
 
-#: dist/prefs.js:66
-msgid "Data & History"
+#: dist/prefs.js:57
+msgid "History"
 msgstr ""
 
-#: dist/prefs.js:71
-msgid "Data Quota & Alerts"
+#: dist/prefs.js:61
+msgid "Data Quota"
 msgstr ""
 
-#: dist/prefs.js:72
-msgid "Set monthly traffic limits and desktop warning notifications."
-msgstr ""
-
-#: dist/prefs.js:75
+#: dist/prefs.js:63
 msgid "Monthly Data Quota (GB)"
 msgstr ""
 
-#: dist/prefs.js:75
+#: dist/prefs.js:63
 msgid "Set to 0 to disable quota warnings"
 msgstr ""
 
-#: dist/prefs.js:76
+#: dist/prefs.js:64
 msgid "Desktop Quota Notifications"
 msgstr ""
 
-#: dist/prefs.js:76
+#: dist/prefs.js:64
 msgid "Show system desktop notifications when reaching 80% and 100% of quota"
 msgstr ""
 
-#: dist/prefs.js:78
-msgid "Data Export"
+#: dist/prefs.js:65
+msgid "Export"
 msgstr ""
 
-#: dist/prefs.js:79
-msgid "Export traffic usage history logs to CSV format."
-msgstr ""
-
-#: dist/prefs.js:83
+#: dist/prefs.js:68
 msgid "Export Traffic History (CSV)"
 msgstr ""
 
-#: dist/prefs.js:84
+#: dist/prefs.js:69
 msgid "Save daily and monthly bandwidth records to a CSV file"
 msgstr ""
 
-#: dist/prefs.js:87
+#: dist/prefs.js:72
 msgid "Export CSV"
 msgstr ""
 
-#: dist/prefs.js:95
+#: dist/prefs.js:80
 msgid "Monthly Application Traffic"
 msgstr ""
 
-#: dist/prefs.js:96
+#: dist/prefs.js:81
 msgid "Traffic recorded this month while each application was focused."
 msgstr ""
 
-#: dist/prefs.js:104
+#: dist/prefs.js:89
 msgid "No Application Traffic Recorded Yet"
 msgstr ""
 
-#: dist/prefs.js:105
+#: dist/prefs.js:90
 msgid ""
 "Bandwidth will be attributed to applications as network activity occurs."
 msgstr ""
 
-#: dist/prefs.js:111
+#: dist/prefs.js:96
 #, javascript-format
 msgid "Monthly total: %s"
 msgstr ""
 
-#: dist/prefs.js:118
+#: dist/prefs.js:103
 msgid "Export Traffic History"
 msgstr ""
 
-#: dist/prefs.js:132
+#: dist/prefs.js:117
 #, javascript-format
 msgid "Exported to %s"
 msgstr ""
 
-#: dist/prefs.js:135
+#: dist/prefs.js:120
 #, javascript-format
 msgid "Export failed: %s"
 msgstr ""
@@ -414,10 +396,6 @@ msgstr ""
 
 #: dist/speedtestPanel.js:96
 msgid "Back"
-msgstr ""
-
-#: dist/speedtestPanel.js:103
-msgid "Speed Test"
 msgstr ""
 
 #: dist/speedtestPanel.js:104
@@ -500,7 +478,7 @@ msgid "Run Again"
 msgstr ""
 
 #: dist/speedtestPanel.js:292
-msgid "Speedtest Complete"
+msgid "Speed Test Complete"
 msgstr ""
 
 #: dist/speedtestPanel.js:292
@@ -545,107 +523,119 @@ msgstr ""
 msgid "Other regions"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:8
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:9
 msgid "Refresh interval in milliseconds"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:9
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:10
 msgid ""
 "How frequently the network speed is polled from /proc/net/dev. Lower values "
 "give more responsive readings but consume more CPU. Recommended range: 1000–"
 "3000."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:18
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:19
 msgid "Display speed in bits per second"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:19
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:20
 msgid ""
 "When true, speeds are shown in Kbps/Mbps (bits). When false, speeds are "
 "shown in KB/s/MB/s (bytes). Default is bytes (false)."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:28
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:29
 msgid "Show upload speed"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:29
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:30
 msgid "Whether to display the upload (TX) speed in the panel."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:34
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:35
 msgid "Show download speed"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:35
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:36
 msgid "Whether to display the download (RX) speed in the panel."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:40
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:41
 msgid "Monitored Network Interface"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:41
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:42
 msgid ""
-"Specific interface name (e.g. wlan0, eth0, tun0) or empty string to sum all "
-"active interfaces."
+"Specific interface name (e.g. wlan0, eth0, tun0) or empty to sum all "
+"hardware interfaces. Tunnels, bridges and container interfaces are left out "
+"because their traffic already passes through a hardware interface."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:46
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:48
 msgid "Monthly Data Quota in GB"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:47
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:49
 msgid ""
 "Monthly data usage limit in Gigabytes. Set to 0 to disable data quota "
 "warnings."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:52
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:54
+msgid "Last quota notification"
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:55
+msgid ""
+"Month and level of the last quota notification, as \"YYYY-MM:80\" or \"YYYY-"
+"MM:100\". Keeps each level to one notification per month across screen locks "
+"and restarts."
+msgstr ""
+
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:60
 msgid "Enable Data Quota Desktop Notifications"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:53
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:61
 msgid ""
 "Whether to trigger system desktop notifications when reaching 80% and 100% "
 "data quota."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:58
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:66
 msgid "Auto-hide panel when network is idle"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:59
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:67
 msgid ""
 "Whether to hide the indicator from top panel when overall network speed is "
 "below threshold."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:64
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:73
 msgid "Idle threshold in KB/s"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:65
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:74
 msgid ""
 "Speed threshold in KB/s below which the indicator is hidden when auto-hide "
 "is enabled."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:70
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:79
 msgid "Adaptive Power and Data Saver"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:71
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:80
 msgid ""
 "Automatically increases the polling interval while running on battery power."
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:76
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:85
 msgid "Track traffic per focused application"
 msgstr ""
 
-#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:77
+#: src/schemas/org.gnome.shell.extensions.speed-meter.gschema.xml:86
 msgid ""
 "Show the focused application in the menu and attribute traffic to whichever "
 "application is focused. This is an approximation, not per-process accounting."

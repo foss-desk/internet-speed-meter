@@ -826,103 +826,17 @@
     color: rgba(0, 0, 0, 0.85);
 }
 
-/* System accent color (org.gnome.desktop.interface accent-color). Blue is the default styling
-above; each other accent uses GNOME's base color,
-lightened for text on dark backgrounds and
-   darkened for text on light ones. */
-
-.accent-teal .speed-meter-app-tracker-bar {
-    background-color: rgba(33, 144, 164, 0.12);
-    border-color: rgba(33, 144, 164, 0.25);
+/* Accents other than blue (GNOME 47+). Blue is the default styling above; the others are
+   derived from the system accent the same way the old hand-picked shades were: text lightened
+   on the dark popup, mixed with black on the light one. */
+.speed-meter-accent .speed-meter-app-tracker-bar {
+    background-color: st-transparentize(-st-accent-color, 0.88);
+    border-color: st-transparentize(-st-accent-color, 0.75);
 }
-.accent-teal .speed-meter-app-tracker-icon { color: #2190a4; }
-.accent-teal .speed-meter-app-tracker-name { color: #3abfd7; }
-.light-mode.accent-teal .speed-meter-app-tracker-name { color: #154f59; }
-.accent-teal .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #2190a4;
-    background-gradient-end: #1b7686;
-}
-
-.accent-green .speed-meter-app-tracker-bar {
-    background-color: rgba(58, 148, 74, 0.12);
-    border-color: rgba(58, 148, 74, 0.25);
-}
-.accent-green .speed-meter-app-tracker-icon { color: #3a944a; }
-.accent-green .speed-meter-app-tracker-name { color: #5cbf6d; }
-.light-mode.accent-green .speed-meter-app-tracker-name { color: #25532d; }
-.accent-green .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #3a944a;
-    background-gradient-end: #307a3d;
-}
-
-.accent-yellow .speed-meter-app-tracker-bar {
-    background-color: rgba(200, 136, 0, 0.12);
-    border-color: rgba(200, 136, 0, 0.25);
-}
-.accent-yellow .speed-meter-app-tracker-icon { color: #c88800; }
-.accent-yellow .speed-meter-app-tracker-name { color: #ffb416; }
-.light-mode.accent-yellow .speed-meter-app-tracker-name { color: #6e4c03; }
-.accent-yellow .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #c88800;
-    background-gradient-end: #a47000;
-}
-
-.accent-orange .speed-meter-app-tracker-bar {
-    background-color: rgba(237, 91, 0, 0.12);
-    border-color: rgba(237, 91, 0, 0.25);
-}
-.accent-orange .speed-meter-app-tracker-icon { color: #ed5b00; }
-.accent-orange .speed-meter-app-tracker-name { color: #ff863b; }
-.light-mode.accent-orange .speed-meter-app-tracker-name { color: #933b04; }
-.accent-orange .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #ed5b00;
-    background-gradient-end: #c94d00;
-}
-
-.accent-red .speed-meter-app-tracker-bar {
-    background-color: rgba(230, 45, 66, 0.12);
-    border-color: rgba(230, 45, 66, 0.25);
-}
-.accent-red .speed-meter-app-tracker-icon { color: #e62d42; }
-.accent-red .speed-meter-app-tracker-name { color: #ee7180; }
-.light-mode.accent-red .speed-meter-app-tracker-name { color: #a41928; }
-.accent-red .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #e62d42;
-    background-gradient-end: #d6192f;
-}
-
-.accent-pink .speed-meter-app-tracker-bar {
-    background-color: rgba(213, 97, 153, 0.12);
-    border-color: rgba(213, 97, 153, 0.25);
-}
-.accent-pink .speed-meter-app-tracker-icon { color: #d56199; }
-.accent-pink .speed-meter-app-tracker-name { color: #e59dc0; }
-.light-mode.accent-pink .speed-meter-app-tracker-name { color: #ab346e; }
-.accent-pink .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #d56199;
-    background-gradient-end: #ce4587;
-}
-
-.accent-purple .speed-meter-app-tracker-bar {
-    background-color: rgba(145, 65, 172, 0.12);
-    border-color: rgba(145, 65, 172, 0.25);
-}
-.accent-purple .speed-meter-app-tracker-icon { color: #9141ac; }
-.accent-purple .speed-meter-app-tracker-name { color: #b370c9; }
-.light-mode.accent-purple .speed-meter-app-tracker-name { color: #5a2d69; }
-.accent-purple .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #9141ac;
-    background-gradient-end: #7b3792;
-}
-
-.accent-slate .speed-meter-app-tracker-bar {
-    background-color: rgba(111, 131, 150, 0.12);
-    border-color: rgba(111, 131, 150, 0.25);
-}
-.accent-slate .speed-meter-app-tracker-icon { color: #6f8396; }
-.accent-slate .speed-meter-app-tracker-name { color: #9ba9b6; }
-.light-mode.accent-slate .speed-meter-app-tracker-name { color: #4e5760; }
-.accent-slate .speed-meter-tab-button.speed-meter-tab-active {
-    background-gradient-start: #6f8396;
-    background-gradient-end: #5f7182;
+.speed-meter-accent .speed-meter-app-tracker-icon { color: -st-accent-color; }
+.speed-meter-accent .speed-meter-app-tracker-name { color: st-lighten(-st-accent-color, 15%); }
+.light-mode.speed-meter-accent .speed-meter-app-tracker-name { color: st-mix(-st-accent-color, #000000, 55%); }
+.speed-meter-accent .speed-meter-tab-button.speed-meter-tab-active {
+    background-gradient-start: -st-accent-color;
+    background-gradient-end: st-darken(-st-accent-color, 7%);
 }

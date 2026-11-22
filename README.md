@@ -99,7 +99,8 @@ internet-speed-meter/
 |---------|-------------|
 | `make install` | Build, compile schemas, and install to GNOME |
 | `make pack` | Generate `.zip` for extensions.gnome.org |
-| `make test` | Launch a nested Wayland shell for safe testing |
+| `make check` | Run the unit tests with gjs |
+| `make test` | Run the extension in a nested Wayland shell with its own settings |
 | `make logs` | Stream GNOME Shell logs filtered for this extension |
 
 ## 📄 License

@@ -35,10 +35,7 @@ function addSpinRow(group: Adw.PreferencesGroup, settings: Gio.Settings, key: st
 
 export default class SpeedMeterPreferences extends ExtensionPreferences {
     async fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
-        // GNOME's prefs dialog reads `window.visible_page` after this method. On GNOME 50
-        // (and other gjs/libadwaita combos) that logs "Gjs-WARNING: Type GITypeInfo of property
-        // Adw.PreferencesWindow::visible-page does not match return type ... of getter".
-        // An own accessor backed by the official getter/setter avoids it.
+        // The shell reads window.visible_page afterwards, which logs a GITypeInfo mismatch warning on GNOME 50.
         Object.defineProperty(window, 'visible_page', {
             get: () => window.get_visible_page(),
             set: (page: Adw.PreferencesPage) => window.set_visible_page(page),
@@ -48,15 +45,12 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
 
         const displayPage = new Adw.PreferencesPage({
-            title: _('Display & Monitor'),
+            title: _('Display'),
             icon_name: 'preferences-desktop-display-symbolic',
         });
         window.add(displayPage);
 
-        const general = new Adw.PreferencesGroup({
-            title: esc(_('General')),
-            description: esc(_('Configure network speed sampling rate and measurement units.')),
-        });
+        const general = new Adw.PreferencesGroup({ title: esc(_('General')) });
         displayPage.add(general);
         addSpinRow(general, settings, 'refresh-interval', _('Refresh Interval (ms)'),
             _('Lower values are more responsive but use more CPU (default: 1500)'), 500, 5000, 100);
@@ -65,13 +59,10 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         general.add(interfaceRow);
         addSwitchRow(general, settings, 'use-bits', _('Display in Bits (Mbps / Kbps)'),
             _('Show speeds in bits per second instead of bytes per second'));
-        addSwitchRow(general, settings, 'adaptive-power-saver', _('Adaptive Power & Battery Saver'),
-            _('Automatically reduce polling frequency when on battery power to conserve energy'));
+        addSwitchRow(general, settings, 'adaptive-power-saver', _('Save Power on Battery'),
+            _('Update at most every 3 seconds while on battery'));
 
-        const visibility = new Adw.PreferencesGroup({
-            title: esc(_('Visibility & Auto-Hide')),
-            description: esc(_('Customize top panel speed indicators and idle behavior.')),
-        });
+        const visibility = new Adw.PreferencesGroup({ title: esc(_('Panel')) });
         displayPage.add(visibility);
         addSwitchRow(visibility, settings, 'show-download', _('Show Download Speed'),
             _('Display incoming bandwidth rate on the top panel'));
@@ -80,30 +71,24 @@ export default class SpeedMeterPreferences extends ExtensionPreferences {
         addSwitchRow(visibility, settings, 'show-top-apps', _('Track Traffic per Focused App'),
             _('Attribute traffic to the focused application (an approximation, not per-process)'));
         addSwitchRow(visibility, settings, 'auto-hide-idle', _('Auto-Hide When Idle'),
-            _('Temporarily hide panel speed numbers when total speed is below threshold'));
+            _('Show an icon instead of the numbers while the speed is below the threshold'));
         addSpinRow(visibility, settings, 'idle-threshold-kb', _('Idle Threshold (KB/s)'),
             _('Speed threshold under which panel indicators hide'), 1, 500, 1);
 
         const dataPage = new Adw.PreferencesPage({
-            title: _('Data & History'),
+            title: _('History'),
             icon_name: 'document-save-symbolic',
         });
         window.add(dataPage);
 
-        const quota = new Adw.PreferencesGroup({
-            title: esc(_('Data Quota & Alerts')),
-            description: esc(_('Set monthly traffic limits and desktop warning notifications.')),
-        });
+        const quota = new Adw.PreferencesGroup({ title: esc(_('Data Quota')) });
         dataPage.add(quota);
         addSpinRow(quota, settings, 'data-quota-gb', _('Monthly Data Quota (GB)'),
             _('Set to 0 to disable quota warnings'), 0, 10000, 5);
         addSwitchRow(quota, settings, 'quota-notify', _('Desktop Quota Notifications'),
             _('Show system desktop notifications when reaching 80% and 100% of quota'));
 
-        const exportGroup = new Adw.PreferencesGroup({
-            title: esc(_('Data Export')),
-            description: esc(_('Export traffic usage history logs to CSV format.')),
-        });
+        const exportGroup = new Adw.PreferencesGroup({ title: esc(_('Export')) });
         dataPage.add(exportGroup);
         const exportRow = new Adw.ActionRow({
             title: esc(_('Export Traffic History (CSV)')),
